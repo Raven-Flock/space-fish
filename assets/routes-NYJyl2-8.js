@@ -1279,7 +1279,7 @@ var p = class {
       this.cine = {};
       for (let e of [`dig`, `turn`, `swarm`, `fish`, `fight`, `close`]) {
         let t = new Image();
-        ((t.src = `/space-fish/opening/${e}.jpg`), (this.cine[e] = t));
+        ((t.src = `opening/${e}.jpg`), (this.cine[e] = t));
       }
       ((this.cineVid = null), (this.voiceEl = null));
     }
@@ -1289,27 +1289,13 @@ var p = class {
       let e = this.cut[this.beat];
       if (!e) return;
       if (e.voice) {
-        let t = new Audio(`/space-fish/opening/${e.voice}.mp3`);
+        let t = new Audio(`opening/${e.voice}.mp3`);
         ((t.volume = 0.95), (this.voiceEl = t), t.play().catch(() => {}));
-      }
-      if (e.clip && !this.reduce) {
-        let t = document.createElement(`video`);
-        ((t.src = `/space-fish/opening/${e.clip}.mp4`),
-          (t.muted = !0),
-          t.setAttribute(`playsinline`, ``),
-          (t.preload = `auto`),
-          (this.cineVid = t),
-          t.play().catch(() => {}));
       }
     }
     stopCine() {
       (this.voiceEl && (this.voiceEl.pause(), (this.voiceEl.src = ``)),
-        (this.voiceEl = null),
-        this.cineVid &&
-          (this.cineVid.pause(),
-          this.cineVid.removeAttribute(`src`),
-          this.cineVid.load()),
-        (this.cineVid = null));
+        (this.voiceEl = null));
     }
     loadArt() {
       let e = (e) => {
@@ -1318,7 +1304,7 @@ var p = class {
         },
         t = (t, n) =>
           Array.from({ length: n }, (n, r) =>
-            e(`/space-fish/sprites/${t}-${r + 1}.png`),
+            e(`sprites/${t}-${r + 1}.png`),
           );
       this.art = {
         astro: t(`astro`, 4),
@@ -1749,35 +1735,30 @@ var p = class {
     drawCine(e) {
       let t = this.ctx;
       if (!t) return;
-      ((t.fillStyle = `#000`), t.fillRect(0, 0, 960, 540));
       let n = this.cut[this.beat],
-        r =
-          this.cineVid && this.cineVid.readyState >= 2
-            ? this.cineVid
-            : this.cine?.[n?.plate];
-      if (r) {
-        let n = r.videoWidth || r.naturalWidth,
-          i = r.videoHeight || r.naturalHeight;
-        if (n && i) {
-          let r = 1 + (this.reduce ? 0 : e * 0.04),
-            a = Math.max(960 / n, 540 / i) * r,
-            o = n * a,
-            s = i * a;
-          t.drawImage(
-            this.cineVid && this.cineVid.readyState >= 2
-              ? this.cineVid
-              : this.cine[this.cut[this.beat].plate],
-            (960 - o) / 2,
-            (540 - s) / 2 - (this.reduce ? 0 : (e - 0.5) * 10),
-            o,
-            s,
-          );
-        }
+        r = this.cine?.[n?.plate],
+        i = r && r.complete && r.naturalWidth;
+      if (!i) {
+        (this.paintSky(),
+          (t.fillStyle = `#1a242c`),
+          t.fillRect(0, 280, 960, 260));
+        return;
       }
-      let i = t.createLinearGradient(0, 430, 0, 540);
-      (i.addColorStop(0, `rgba(0,0,0,0)`),
-        i.addColorStop(1, `rgba(0,0,0,0.62)`),
-        (t.fillStyle = i),
+      let a = r.naturalWidth,
+        o = r.naturalHeight,
+        s = (this.reduce ? 1.04 : 1.06 + e * 0.03),
+        c = Math.max(960 / a, 540 / o) * s,
+        l = a * c,
+        u = o * c,
+        d = Math.max(0, (l - 960) / 2),
+        f = Math.max(0, (u - 540) / 2),
+        p = this.reduce ? 0 : (e - 0.5) * d * 0.25,
+        m = this.reduce ? 0 : (0.5 - e) * f * 0.35;
+      (t.drawImage(r, (960 - l) / 2 + p, (540 - u) / 2 + m, l, u));
+      let h = t.createLinearGradient(0, 430, 0, 540);
+      (h.addColorStop(0, `rgba(0,0,0,0)`),
+        h.addColorStop(1, `rgba(0,0,0,0.62)`),
+        (t.fillStyle = h),
         t.fillRect(0, 430, 960, 110));
     }
     bindInputs() {
