@@ -6,7 +6,7 @@ A three-phase moon run. Sneak the rim, free the holdouts, rebuild the pad, then 
 
 ## How to play
 
-- **WASD** or arrows move. On a phone, use the stick.
+- **WASD** or arrows move. On a phone, turn sideways: drag the stick, or tap the ground to walk. **Fire**, **Use**, **Sneak**, and **Noise** are the buttons on the right.
 - **Shift** sneaks. **Q** throws noise. **Space** or click fires. **E** uses.
 - **Esc** pauses. **Space** or **Enter** steps a cutscene. **Skip** jumps it.
 - The south rim is the quiet way to the cache. The laser locks onto nearby fish.
