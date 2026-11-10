@@ -80,23 +80,50 @@ var r = t(e(), 1),
   o = { gen: 40, turret: 45, lab: 60 },
   s = {
     intro: [
-      { dur: 3.1, kind: `walk`, caption: `Perimeter check. The rim is quiet.` },
       {
-        dur: 2.7,
-        kind: `wide`,
-        caption: `Base lights are on. Nobody is shouting.`,
+        dur: 6.8,
+        kind: `cine`,
+        plate: `dig`,
+        clip: `dig`,
+        voice: `open`,
+        caption: `On the rim of the base, the work is quiet. The miner digs. The robot keeps the light.`,
       },
-      { dur: 3.2, kind: `swarm`, caption: `Then the sky tears open.` },
       {
-        dur: 2.9,
-        kind: `watch`,
-        caption: `You are still outside. The base is not.`,
+        dur: 7,
+        kind: `cine`,
+        plate: `turn`,
+        voice: `turn`,
+        caption: `Then the sound reaches him. Not the usual machinery. Something tearing.`,
       },
-      { dur: 3.3, kind: `duel`, caption: `One fish breaks from the swarm.` },
       {
-        dur: 3.5,
-        kind: `line`,
-        caption: `I need to get back to the weapons cache.`,
+        dur: 6.4,
+        kind: `cine`,
+        plate: `swarm`,
+        clip: `swarm`,
+        voice: `reveal`,
+        caption: `He turns. Behind him the base is already coming apart. The swarm is here.`,
+      },
+      {
+        dur: 5.2,
+        kind: `cine`,
+        plate: `fish`,
+        voice: `attack`,
+        caption: `One breaks free. The robot goes down hard.`,
+      },
+      {
+        dur: 6.4,
+        kind: `cine`,
+        plate: `fight`,
+        clip: `fight`,
+        voice: `fight`,
+        caption: `There is no time to run. Only the shovel.`,
+      },
+      {
+        dur: 6.5,
+        kind: `cine`,
+        plate: `close`,
+        voice: `close`,
+        caption: `I need to get to the weapons cache.`,
       },
     ],
     arm: [{ dur: 3.1, kind: `arm`, caption: `Now I can fight back.` }],
@@ -300,6 +327,7 @@ var p = class {
           !1),
         this.bindInputs(),
         this.loadArt(),
+        this.loadCine(),
         this.resize(),
         (window.__controlsTest = {
           getYaw: () => this.getYaw(),
@@ -314,6 +342,7 @@ var p = class {
       for (let e of this.unbind) e();
       ((this.unbind = []),
         this.audio.close(),
+        this.stopCine(),
         window.__controlsTest?.getYaw === this.getYaw.bind(this) &&
           delete window.__controlsTest);
     }
@@ -416,7 +445,9 @@ var p = class {
       this.mode === `cutscene` &&
         ((this.beat += 1),
         (this.beatT = 0),
-        this.beat >= this.cut.length ? this.finishCut() : this.push(0, !0));
+        this.beat >= this.cut.length
+          ? this.finishCut()
+          : (this.playCine(), this.push(0, !0)));
     }
     readSave() {
       try {
@@ -588,9 +619,11 @@ var p = class {
         (this.beat = 0),
         (this.beatT = 0),
         (this.mode = `cutscene`),
-        this.push(0, !0));
+        this.push(0, !0),
+        e === `intro` && this.playCine());
     }
     finishCut() {
+      this.stopCine();
       let e = this.cutId;
       ((this.cut = []),
         e === `intro`
@@ -1242,6 +1275,42 @@ var p = class {
         powered: n.gens > 0,
       });
     }
+    loadCine() {
+      this.cine = {};
+      for (let e of [`dig`, `turn`, `swarm`, `fish`, `fight`, `close`]) {
+        let t = new Image();
+        ((t.src = `/space-fish/opening/${e}.jpg`), (this.cine[e] = t));
+      }
+      ((this.cineVid = null), (this.voiceEl = null));
+    }
+    playCine() {
+      this.stopCine();
+      if (this.cutId !== `intro` || this.mode !== `cutscene`) return;
+      let e = this.cut[this.beat];
+      if (!e) return;
+      if (e.voice) {
+        let t = new Audio(`/space-fish/opening/${e.voice}.mp3`);
+        ((t.volume = 0.95), (this.voiceEl = t), t.play().catch(() => {}));
+      }
+      if (e.clip && !this.reduce) {
+        let t = document.createElement(`video`);
+        ((t.src = `/space-fish/opening/${e.clip}.mp4`),
+          (t.muted = !0),
+          t.setAttribute(`playsinline`, ``),
+          (t.preload = `auto`),
+          (this.cineVid = t),
+          t.play().catch(() => {}));
+      }
+    }
+    stopCine() {
+      (this.voiceEl && (this.voiceEl.pause(), (this.voiceEl.src = ``)),
+        (this.voiceEl = null),
+        this.cineVid &&
+          (this.cineVid.pause(),
+          this.cineVid.removeAttribute(`src`),
+          this.cineVid.load()),
+        (this.cineVid = null));
+    }
     loadArt() {
       let e = (e) => {
           let t = new Image();
@@ -1577,6 +1646,10 @@ var p = class {
       this.drawScene(`walk`, e);
     }
     drawScene(e, t) {
+      if (e === `cine`) {
+        this.drawCine(t);
+        return;
+      }
       let n = this.ctx;
       if (!n) return;
       ((this.camX = 0),
@@ -1672,6 +1745,40 @@ var p = class {
           (n.globalAlpha = 0.45),
           this.sprite(this.art.boss[0], 680, 280, 200, 140),
           (n.globalAlpha = 1));
+    }
+    drawCine(e) {
+      let t = this.ctx;
+      if (!t) return;
+      ((t.fillStyle = `#000`), t.fillRect(0, 0, 960, 540));
+      let n = this.cut[this.beat],
+        r =
+          this.cineVid && this.cineVid.readyState >= 2
+            ? this.cineVid
+            : this.cine?.[n?.plate];
+      if (r) {
+        let n = r.videoWidth || r.naturalWidth,
+          i = r.videoHeight || r.naturalHeight;
+        if (n && i) {
+          let r = 1 + (this.reduce ? 0 : e * 0.04),
+            a = Math.max(960 / n, 540 / i) * r,
+            o = n * a,
+            s = i * a;
+          t.drawImage(
+            this.cineVid && this.cineVid.readyState >= 2
+              ? this.cineVid
+              : this.cine[this.cut[this.beat].plate],
+            (960 - o) / 2,
+            (540 - s) / 2 - (this.reduce ? 0 : (e - 0.5) * 10),
+            o,
+            s,
+          );
+        }
+      }
+      let i = t.createLinearGradient(0, 430, 0, 540);
+      (i.addColorStop(0, `rgba(0,0,0,0)`),
+        i.addColorStop(1, `rgba(0,0,0,0.62)`),
+        (t.fillStyle = i),
+        t.fillRect(0, 430, 960, 110));
     }
     bindInputs() {
       let e = (e) => {
