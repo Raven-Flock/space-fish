@@ -1,37 +1,17 @@
-<p align="center">
-  <img src="brand/logo-c.png" alt="Raven Flock" width="280" />
-</p>
+# Spacefish
 
-<p align="center"><strong>Raven Flock — Consider the ravens.</strong></p>
-
----
-
-# Space Fish
-
-A scrolling space shooter. You are a **space fish** — a koi-shaped starfighter — through a neon nebula.
+A three-phase moon run. Sneak the rim, free the holdouts, rebuild the pad, then fly the swarm to Jupiter.
 
 **Play:** [https://raven-flock.github.io/space-fish/](https://raven-flock.github.io/space-fish/)
 
 ## How to play
 
-- **Move** with arrow keys or WASD (or the Move stick / canvas drag on phone).
-- **Fire** with Space, click / tap, or hold Fire.
-- Survive waves. Keep a combo. Power-ups: Rapid, Shield, Bloom.
-- Three lives. High score stays local.
+- **WASD** or arrows move. On a phone, use the stick.
+- **Shift** sneaks. **Q** throws noise. **Space** or click fires. **E** uses.
+- **Esc** pauses. **Space** or **Enter** steps a cutscene. **Skip** jumps it.
+- The south rim is the quiet way to the cache. The laser locks onto nearby fish.
+- On the pad, pick Generator, Turret, or Lab and click open ground. You need one generator, two turrets, and a lab. Burn the nest, stand on the brass pad, and press **E**.
+- In transit, grab the kits and change lanes. Jupiter is the eye at the end.
+- Continue resumes the last phase on this device.
 
-**P** pauses · **M** mutes · hiding the tab pauses the run.
-
-## Run locally
-
-```bash
-python3 -m http.server 8080
-```
-
-Then visit `http://localhost:8080/`.
-
-GitHub Pages: `https://raven-flock.github.io/space-fish/`
-
----
-
-Raven Flock — quiet tools.  
-*Consider the ravens.* · A reminder you are not forgotten.
+Raven Flock — quiet tools.
