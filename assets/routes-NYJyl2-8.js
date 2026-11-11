@@ -361,16 +361,22 @@ var p = class {
     resize() {
       let e = this.canvas;
       if (!e) return;
-      let t = e.getBoundingClientRect(),
-        n = Math.min(2, window.devicePixelRatio || 1);
-      ((e.width = Math.max(1, Math.floor(t.width * n))),
-        (e.height = Math.max(1, Math.floor(t.height * n))));
-      let r = Math.min(t.width / 960, t.height / 540);
+      let w = e.clientWidth,
+        h = e.clientHeight;
+      if (w < 2 || h < 2) {
+        let t = e.getBoundingClientRect();
+        ((w = t.width), (h = t.height));
+      }
+      if (w < 2 || h < 2) return;
+      let n = Math.min(2, window.devicePixelRatio || 1);
+      ((e.width = Math.max(1, Math.floor(w * n))),
+        (e.height = Math.max(1, Math.floor(h * n))));
+      let r = Math.min(w / 960, h / 540);
       this.view = {
         dpr: n,
         scale: r,
-        ox: (t.width - 960 * r) / 2,
-        oy: (t.height - 540 * r) / 2,
+        ox: (w - 960 * r) / 2,
+        oy: (h - 540 * r) / 2,
       };
     }
     setQaKeys(e) {
@@ -1983,8 +1989,15 @@ var p = class {
       let t = this.canvas;
       if (!t) return null;
       let n = t.getBoundingClientRect(),
-        r = (e.clientX - n.left - this.view.ox) / this.view.scale,
-        i = (e.clientY - n.top - this.view.oy) / this.view.scale;
+        w = t.clientWidth,
+        h = t.clientHeight,
+        x,
+        y;
+      Math.abs(n.width - w) > 4 || Math.abs(n.height - h) > 4
+        ? ((x = e.clientY - n.top), (y = n.right - e.clientX))
+        : ((x = e.clientX - n.left), (y = e.clientY - n.top));
+      let r = (x - this.view.ox) / this.view.scale,
+        i = (y - this.view.oy) / this.view.scale;
       return {
         x: r + this.camX,
         y: i + this.camY,
@@ -2014,25 +2027,11 @@ function phoneTouch() {
     t = window.matchMedia?.(`(hover: none)`).matches;
   return !!(e || t);
 }
-let landscapeFs = !1;
-function lockLandscape(e) {
-  if (!phoneTouch()) return Promise.resolve(!1);
-  let t = screen.orientation;
-  if (!t || !t.lock) return Promise.resolve(!1);
-  return t
-    .lock(`landscape`)
-    .then(() => !0)
-    .catch(() => {
-      if (!e || landscapeFs) return !1;
-      landscapeFs = !0;
-      let t = document.documentElement,
-        n = t.requestFullscreen || t.webkitRequestFullscreen;
-      if (!n || document.fullscreenElement) return !1;
-      return Promise.resolve(n.call(t))
-        .then(() => screen.orientation.lock(`landscape`))
-        .then(() => !0)
-        .catch(() => !1);
-    });
+function lockLandscape() {
+  if (!phoneTouch()) return;
+  let e = screen.orientation;
+  if (!e || !e.lock) return;
+  e.lock(`landscape`).catch(() => {});
 }
 function h() {
   let e = (0, r.useRef)(null),
@@ -2044,15 +2043,19 @@ function h() {
     [knob, setKnob] = (0, r.useState)({ x: 0, y: 0 }),
     [touchUi, setTouchUi] = (0, r.useState)(!1),
     [portrait, setPortrait] = (0, r.useState)(!1),
-    [anyway, setAnyway] = (0, r.useState)(!1),
-    frameRef = (0, r.useRef)(null);
+    [forced, setForced] = (0, r.useState)(!1),
+    [vp, setVp] = (0, r.useState)({ w: 0, h: 0 });
   (0, r.useEffect)(() => {
     let e = () => {
       let t = window.matchMedia?.(`(pointer: coarse)`).matches,
         n = window.matchMedia?.(`(hover: none)`).matches,
-        r = Math.min(window.innerWidth, window.innerHeight);
-      (setTouchUi(!!(t || n || r <= 520)),
-        setPortrait(window.innerHeight > window.innerWidth + 40));
+        r = Math.min(window.innerWidth, window.innerHeight),
+        phone = !!(t || n),
+        tall = window.innerHeight > window.innerWidth + 40;
+      (setTouchUi(!!(phone || r <= 520)),
+        setPortrait(tall),
+        setForced(phone && tall),
+        setVp({ w: window.innerWidth, h: window.innerHeight }));
     },
       z = () => {
         ((i.current = null), setKnob({ x: 0, y: 0 }), t.current?.setStick(0, 0));
@@ -2061,10 +2064,12 @@ function h() {
       e(),
       window.addEventListener(`resize`, e),
       window.addEventListener(`orientationchange`, e),
+      window.visualViewport?.addEventListener(`resize`, e),
       window.addEventListener(`blur`, z),
       () => {
         (window.removeEventListener(`resize`, e),
           window.removeEventListener(`orientationchange`, e),
+          window.visualViewport?.removeEventListener(`resize`, e),
           window.removeEventListener(`blur`, z));
       }
     );
@@ -2086,33 +2091,14 @@ function h() {
     );
   }, []);
   (0, r.useEffect)(() => {
-    let pad = (e) => {
-      if (!e) return;
-      ((e.style.top = `env(safe-area-inset-top)`),
-        (e.style.right = `env(safe-area-inset-right)`),
-        (e.style.bottom = `env(safe-area-inset-bottom)`),
-        (e.style.left = `env(safe-area-inset-left)`),
-        (e.style.width = `auto`),
-        (e.style.height = `auto`));
-    };
-    (pad(e.current), pad(frameRef.current));
-  }, []);
+    let n = requestAnimationFrame(() => t.current?.resize());
+    return () => cancelAnimationFrame(n);
+  }, [forced, vp.w, vp.h]);
   (0, r.useEffect)(() => {
-    let n = () => {
-        phoneTouch() &&
-          window.innerWidth + 40 >= window.innerHeight &&
-          lockLandscape(!1);
-      },
-      i = () => {
-        phoneTouch() && lockLandscape(!0);
-      };
+    let n = () => phoneTouch() && lockLandscape();
     return (
-      window.addEventListener(`orientationchange`, n),
-      window.addEventListener(`pointerdown`, i),
-      () => {
-        (window.removeEventListener(`orientationchange`, n),
-          window.removeEventListener(`pointerdown`, i));
-      }
+      window.addEventListener(`pointerdown`, n, { once: !0 }),
+      () => window.removeEventListener(`pointerdown`, n)
     );
   }, []);
   let l = a.mode === `play` || a.mode === `pause`,
@@ -2121,17 +2107,33 @@ function h() {
       e.preventDefault();
       let r = n.current.getBoundingClientRect(),
         a = e.clientX - (r.left + r.width / 2),
-        o = e.clientY - (r.top + r.height / 2),
-        s = stickOut(a, o, r.width / 2);
+        o = e.clientY - (r.top + r.height / 2);
+      if (forced) {
+        let e = a;
+        ((a = o), (o = -e));
+      }
+      let s = stickOut(a, o, Math.min(r.width, r.height) / 2);
       (setKnob({ x: s.vx, y: s.vy }), t.current?.setStick(s.x, s.y, !0));
     },
     releaseStick = (e) => {
       if (i.current !== e.pointerId) return;
       ((i.current = null), setKnob({ x: 0, y: 0 }), t.current?.setStick(0, 0));
     },
-    showTouch = touchUi && (!portrait || anyway);
+    showTouch = touchUi && (!portrait || forced);
   return (0, m.jsxs)(`main`, {
     className: `relative flex h-dvh flex-col bg-bg text-fg`,
+    style: forced
+      ? {
+          position: `fixed`,
+          top: 0,
+          left: `${vp.w}px`,
+          width: `${vp.h}px`,
+          height: `${vp.w}px`,
+          transform: `rotate(90deg)`,
+          transformOrigin: `top left`,
+          overflow: `hidden`,
+        }
+      : void 0,
     children: [
       (0, m.jsxs)(`div`, {
         className: `relative min-h-0 flex-1`,
@@ -2141,7 +2143,6 @@ function h() {
             className: `absolute inset-0 h-full w-full touch-none`,
           }),
           (0, m.jsxs)(`div`, {
-            ref: frameRef,
             className: `pointer-events-none absolute inset-0 flex flex-col`,
             children: [
               l &&
@@ -2458,11 +2459,15 @@ function h() {
               ref: n,
               className: `pointer-events-auto absolute`,
               style: {
-                left: `max(12px, env(safe-area-inset-left))`,
+                left: forced
+                  ? `max(12px, env(safe-area-inset-top))`
+                  : `max(12px, env(safe-area-inset-left))`,
                 bottom:
                   a.phase === `base`
-                    ? `calc(76px + env(safe-area-inset-bottom))`
-                    : `max(12px, env(safe-area-inset-bottom))`,
+                    ? `76px`
+                    : forced
+                      ? `max(12px, env(safe-area-inset-left))`
+                      : `max(12px, env(safe-area-inset-bottom))`,
                 width: 148,
                 height: 148,
                 borderRadius: 999,
@@ -2494,11 +2499,15 @@ function h() {
             (0, m.jsxs)(`div`, {
               className: `pointer-events-auto absolute grid grid-cols-2 gap-2`,
               style: {
-                right: `max(12px, env(safe-area-inset-right))`,
+                right: forced
+                  ? `max(12px, env(safe-area-inset-bottom))`
+                  : `max(12px, env(safe-area-inset-right))`,
                 bottom:
                   a.phase === `base`
-                    ? `calc(76px + env(safe-area-inset-bottom))`
-                    : `max(12px, env(safe-area-inset-bottom))`,
+                    ? `76px`
+                    : forced
+                      ? `max(12px, env(safe-area-inset-right))`
+                      : `max(12px, env(safe-area-inset-bottom))`,
                 width: 176,
               },
               children: [
@@ -2522,43 +2531,6 @@ function h() {
                   children: `Use`,
                 }),
               ],
-            }),
-          ],
-        }),
-      touchUi &&
-        portrait &&
-        !anyway &&
-        (0, m.jsxs)(`div`, {
-          className: `absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 text-center`,
-          style: {
-            background: `#0c1218`,
-            zIndex: 40,
-            padding: `24px`,
-          },
-          children: [
-            (0, m.jsx)(`p`, {
-              className: `font-display text-xs tracking-widest text-primary`,
-              children: `SPACEFISH`,
-            }),
-            (0, m.jsx)(`h1`, {
-              className: `font-display text-3xl font-bold`,
-              children: `Rotate to landscape`,
-            }),
-            (0, m.jsx)(`p`, {
-              className: `max-w-xs text-sm text-muted`,
-              children: `Turn the phone sideways. The rim locks to landscape when the browser allows it.`,
-            }),
-            (0, m.jsx)(`button`, {
-              type: `button`,
-              className: `rounded-lg bg-primary px-5 py-3 font-display font-bold text-on-primary`,
-              onClick: () => lockLandscape(!0),
-              children: `Lock landscape`,
-            }),
-            (0, m.jsx)(`button`, {
-              type: `button`,
-              className: `rounded-lg border border-border px-5 py-3 font-display font-bold`,
-              onClick: () => setAnyway(!0),
-              children: `Play anyway`,
             }),
           ],
         }),
