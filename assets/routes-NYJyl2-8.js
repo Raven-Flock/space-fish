@@ -3,48 +3,84 @@ var r = t(e(), 1),
   i = class {
     ctx = null;
     master = null;
-    music = null;
-    musicGain = null;
     mood = ``;
+    musicVol = 0.7;
+    current = null;
+    fadeToken = 0;
+    loops = null;
+    constructor() {
+      try {
+        let e = localStorage.getItem(`spacefish-music`);
+        if (e != null) this.musicVol = Math.max(0, Math.min(1, parseFloat(e) || 0));
+      } catch {}
+    }
+    ensureLoops() {
+      if (this.loops) return;
+      let e = (e) => {
+        let t = new Audio(`music/${e}.mp3`);
+        return ((t.loop = !0), (t.preload = `auto`), (t.volume = 0), t);
+      };
+      this.loops = {
+        rim: e(`rim`),
+        holdouts: e(`holdouts`),
+        base: e(`base`),
+        swarm: e(`swarm`),
+        transit: e(`transit`),
+        ending: e(`ending`),
+      };
+    }
     unlock() {
       let e = window.AudioContext || window.webkitAudioContext;
-      e &&
+      (e &&
         (this.ctx ||
           ((this.ctx = new e()),
           (this.master = this.ctx.createGain()),
           (this.master.gain.value = 0.22),
-          this.master.connect(this.ctx.destination),
-          (this.music = this.ctx.createOscillator()),
-          (this.music.type = `triangle`),
-          (this.musicGain = this.ctx.createGain()),
-          (this.musicGain.gain.value = 0.028),
-          this.music.connect(this.musicGain),
-          this.musicGain.connect(this.master),
-          (this.music.frequency.value = 74),
-          this.music.start(),
-          (this.mood = ``)),
-        this.ctx.resume());
+          this.master.connect(this.ctx.destination))),
+        this.ctx?.resume(),
+        this.ensureLoops(),
+        this.mood || this.setMood(`rim`));
     }
     close() {
-      (this.music?.stop(),
+      (this.current && (this.current.pause(), (this.current = null)),
         this.ctx?.close(),
-        (this.ctx = null),
-        (this.music = null));
+        (this.ctx = null));
+    }
+    setMusic(e) {
+      ((this.musicVol = Math.max(0, Math.min(1, e))),
+        this.current && (this.current.volume = this.musicVol));
+      try {
+        localStorage.setItem(`spacefish-music`, String(this.musicVol));
+      } catch {}
     }
     setMood(e) {
-      if (!this.ctx || !this.music || e === this.mood) return;
+      let t = {
+        stealth: `rim`,
+        menu: `rim`,
+        alert: `swarm`,
+        shooter: `transit`,
+        rescue: `holdouts`,
+      };
+      e = t[e] || e;
+      if ((this.ensureLoops(), e === this.mood)) return;
       this.mood = e;
-      let t =
-        e === `stealth`
-          ? 68
-          : e === `alert`
-            ? 196
-            : e === `base`
-              ? 92
-              : e === `shooter`
-                ? 156
-                : 58;
-      this.music.frequency.setTargetAtTime(t, this.ctx.currentTime, 0.25);
+      let n = this.loops[e];
+      if (!n) return;
+      let r = this.current;
+      if (r === n) return;
+      let i = ++this.fadeToken,
+        a = performance.now();
+      ((n.volume = 0), n.play().catch(() => {}));
+      let o = () => {
+        if (i !== this.fadeToken) return;
+        let e = Math.min(1, (performance.now() - a) / 700);
+        ((n.volume = this.musicVol * e),
+          r && r !== n && (r.volume = this.musicVol * (1 - e)),
+          e < 1
+            ? requestAnimationFrame(o)
+            : r && r !== n && r.pause());
+      };
+      ((this.current = n), o());
     }
     tone(e, t, n, r) {
       if (!this.ctx || !this.master) return;
@@ -391,6 +427,9 @@ var p = class {
     getX() {
       return this.player.x;
     }
+    setMusic(e) {
+      this.audio.setMusic(e);
+    }
     setStick(e, t, n) {
       ((this.stickX = e), (this.stickY = t));
       if (n || e !== 0 || t !== 0) this.tap = null;
@@ -437,7 +476,9 @@ var p = class {
       ((this.mode = `credits`), this.push(0, !0));
     }
     backToMenu() {
-      ((this.mode = `menu`), this.push(0, !0));
+      ((this.mode = `menu`),
+        this.audio.ctx && this.audio.setMood(`rim`),
+        this.push(0, !0));
     }
     resume() {
       (this.mode === `pause` && (this.mode = `play`), this.push(0, !0));
@@ -597,7 +638,13 @@ var p = class {
                 this.scheduleKits()),
         this.writeSave(e),
         this.audio.setMood(
-          e === `shooter` ? `shooter` : e === `base` ? `base` : `stealth`,
+          e === `shooter`
+            ? `transit`
+            : e === `base`
+              ? `base`
+              : e === `rescue`
+                ? `holdouts`
+                : `rim`,
         ),
         this.push(0, !0));
     }
@@ -652,11 +699,11 @@ var p = class {
                       t: 0,
                       shot: 0.6,
                     }),
-                    this.audio.setMood(`alert`),
+                    this.audio.setMood(`swarm`),
                     this.push(0, !0))
                   : e === `victory`
                     ? ((this.mode = `victory`),
-                      this.audio.setMood(`menu`),
+                      this.audio.setMood(`ending`),
                       this.push(0, !0))
                     : ((this.mode = `play`), this.push(0, !0)));
     }
@@ -741,15 +788,18 @@ var p = class {
         this.player.hp <= 0 &&
           this.mode === `play` &&
           ((this.mode = `dead`), this.audio.hit(), (this.shake = 1)));
-      let a =
-        this.alert > 0 && this.phase === `stealth`
-          ? `alert`
+      let a = this.bossOn
+        ? `swarm`
+        : this.alert > 0 && this.phase === `stealth`
+          ? `swarm`
           : this.phase === `shooter`
-            ? `shooter`
+            ? `transit`
             : this.phase === `base`
               ? `base`
-              : `stealth`;
-      (this.audio.setMood(this.bossOn ? `alert` : a), this.push(e));
+              : this.phase === `rescue`
+                ? `holdouts`
+                : `rim`;
+      (this.audio.setMood(a), this.push(e));
     }
     tickGround(e, t, n, r) {
       let i = this.player.x,
@@ -1337,6 +1387,17 @@ var p = class {
         robot: e(`rim/robot.png`),
         fish: e(`rim/fish.png`),
         miner: [0, 1, 2, 3].map((t) => e(`rim/miner${t}.png`)),
+        rescue: e(`rim/rescue.jpg`),
+        yard: e(`rim/yard.jpg`),
+        jupiter: e(`rim/jupiter.jpg`),
+        ship: e(`rim/ship.png`),
+        fishside: e(`rim/fishside.png`),
+        boss: e(`rim/boss.png`),
+        nest: e(`rim/nest.png`),
+        gen: e(`rim/gen.png`),
+        turret: e(`rim/turret.png`),
+        lab: e(`rim/lab.png`),
+        pad: e(`rim/pad.png`),
       };
     }
     imgOk(e) {
@@ -1399,6 +1460,12 @@ var p = class {
         e.translate(-this.camX, -this.camY));
       if (this.phase === `stealth` && this.imgOk(this.rim?.ground))
         this.drawRimTerrain(e);
+      else if (this.phase === `rescue` && this.imgOk(this.rim?.rescue))
+        (e.drawImage(this.rim.rescue, 0, 0, this.world.w, this.world.h),
+          this.drawBulkheads(e));
+      else if (this.phase === `base` && this.imgOk(this.rim?.yard))
+        (e.drawImage(this.rim.yard, 0, 0, this.world.w, this.world.h),
+          this.drawBulkheads(e));
       else {
         ((e.fillStyle = this.phase === `rescue` ? `#12181e` : `#1a242c`),
           e.fillRect(0, 0, this.world.w, this.world.h),
@@ -1448,8 +1515,10 @@ var p = class {
           (e.lineWidth = 2),
           e.beginPath(),
           e.arc(this.pad.x, this.pad.y, 36, 0, Math.PI * 2),
-          e.stroke(),
-          (e.fillStyle = `#e8efe9`),
+          e.stroke());
+        if (this.imgOk(this.rim?.pad))
+          e.drawImage(this.rim.pad, this.pad.x - 54, this.pad.y - 54, 108, 108);
+        ((e.fillStyle = `#e8efe9`),
           (e.font = `12px Sora, sans-serif`),
           e.fillText(`PAD`, this.pad.x - 14, this.pad.y - 44));
         for (let t of this.nodes)
@@ -1459,40 +1528,57 @@ var p = class {
             e.arc(t.x, t.y, 10, 0, Math.PI * 2),
             e.fill());
         if (this.nest.hp > 0) {
-          let t = this.art.prop[3];
-          this.sprite(
-            t && t.complete ? t : void 0,
-            this.nest.x,
-            this.nest.y,
-            96,
-            90,
-          ) ||
-            ((e.fillStyle = `#7a4ad4`),
-            e.beginPath(),
-            e.arc(this.nest.x, this.nest.y, this.nest.r, 0, Math.PI * 2),
-            e.fill());
+          if (this.imgOk(this.rim?.nest))
+            e.drawImage(this.rim.nest, this.nest.x - 70, this.nest.y - 64, 140, 128);
+          else {
+            let t = this.art.prop[3];
+            this.sprite(
+              t && t.complete ? t : void 0,
+              this.nest.x,
+              this.nest.y,
+              96,
+              90,
+            ) ||
+              ((e.fillStyle = `#7a4ad4`),
+              e.beginPath(),
+              e.arc(this.nest.x, this.nest.y, this.nest.r, 0, Math.PI * 2),
+              e.fill());
+          }
         }
         for (let t of this.structures) {
-          let n = t.kind === `gen` ? 0 : t.kind === `turret` ? 1 : 2,
-            r = this.art.prop[n];
-          this.sprite(r && r.complete ? r : void 0, t.x, t.y, 72, 68) ||
-            ((e.fillStyle = `#3ec7c2`), e.fillRect(t.x - 20, t.y - 20, 40, 40));
+          let n =
+              t.kind === `gen`
+                ? this.rim?.gen
+                : t.kind === `turret`
+                  ? this.rim?.turret
+                  : this.rim?.lab,
+            r = this.art.prop[t.kind === `gen` ? 0 : t.kind === `turret` ? 1 : 2];
+          this.imgOk(n)
+            ? e.drawImage(n, t.x - 36, t.y - 34, 72, 68)
+            : this.sprite(r && r.complete ? r : void 0, t.x, t.y, 72, 68) ||
+              ((e.fillStyle = `#3ec7c2`), e.fillRect(t.x - 20, t.y - 20, 40, 40));
         }
-        for (let e = 0; e < this.freedCount; e++) {
-          let t = this.art.astro[0];
-          this.sprite(
-            t && t.complete ? t : void 0,
-            this.pad.x - 70 + e * 28,
-            this.pad.y + 50,
-            28,
-            42,
-          );
+        for (let n = 0; n < this.freedCount; n++) {
+          let r = this.rim?.miner?.[0];
+          this.imgOk(r)
+            ? e.drawImage(r, this.pad.x - 78 + n * 28, this.pad.y + 28, 24, 36)
+            : this.sprite(
+                this.art.astro[0],
+                this.pad.x - 70 + n * 28,
+                this.pad.y + 50,
+                28,
+                42,
+              );
         }
       }
       for (let t of this.holdouts) {
         if (t.freed) continue;
-        let n = this.art.astro[0];
-        (this.sprite(n && n.complete ? n : void 0, t.x, t.y, 36, 54),
+        let n = this.imgOk(this.rim?.miner?.[0])
+          ? this.rim.miner[0]
+          : this.art.astro[0];
+        (this.imgOk(n)
+          ? e.drawImage(n, t.x - 16, t.y - 28, 32, 48)
+          : this.sprite(n && n.complete ? n : void 0, t.x, t.y, 36, 54),
           (e.strokeStyle = `#d4a24a`),
           e.strokeRect(t.x - 16, t.y - 30, 32, 8));
       }
@@ -1503,7 +1589,7 @@ var p = class {
         e.fill());
       let t = this.frame(this.art.fishtd);
       for (let n of this.fish)
-        this.phase === `stealth` && this.imgOk(this.rim?.fish)
+        this.imgOk(this.rim?.fish)
           ? (e.save(),
             e.translate(n.x, n.y),
             e.rotate(n.facing),
@@ -1528,7 +1614,7 @@ var p = class {
           e.arc(t.x, t.y, t.r, 0, Math.PI * 2),
           e.fill());
       let n = this.art.astro[this.dir],
-        rimMiner = this.phase === `stealth` && this.rim?.miner?.[this.dir];
+        rimMiner = this.rim?.miner?.[this.dir];
       if (this.tap) this.drawTap(e);
       if (this.imgOk(rimMiner))
         (e.save(),
@@ -1561,6 +1647,14 @@ var p = class {
         this.drawArrow(),
         this.invuln > 0 &&
           ((e.fillStyle = `rgba(226,91,74,0.18)`), e.fillRect(0, 0, 960, 540)));
+    }
+    drawBulkheads(e) {
+      for (let t of this.covers)
+        ((e.fillStyle =
+          this.phase === `rescue` ? `rgba(10,14,18,0.8)` : `rgba(16,18,20,0.45)`),
+          e.fillRect(t.x, t.y, t.w, t.h),
+          (e.strokeStyle = `rgba(212,162,74,0.3)`),
+          e.strokeRect(t.x + 1, t.y + 1, Math.max(0, t.w - 2), Math.max(0, t.h - 2)));
     }
     drawRimTerrain(e) {
       let t = this.rim.ground;
@@ -1691,48 +1785,53 @@ var p = class {
     drawShooter() {
       let e = this.ctx;
       if (!e) return;
-      ((this.camX = this.scroll),
-        (this.camY = 0),
-        this.paintSky(),
-        e.save(),
-        e.translate(-this.camX, 0));
-      let t = this.frame(this.art.ship, 10);
-      (this.drawTap(e),
+      ((this.camX = this.scroll), (this.camY = 0));
+      this.imgOk(this.rim?.jupiter) ? this.paintFlight(e) : this.paintSky();
+      e.save();
+      e.translate(-this.camX, 0);
+      this.drawTap(e);
+      if (this.imgOk(this.rim?.ship))
+        e.drawImage(this.rim.ship, this.player.x - 63, this.player.y - 21, 126, 42);
+      else {
+        let t = this.frame(this.art.ship, 10);
         this.sprite(t, this.player.x, this.player.y, 84, 40) ||
-        ((e.fillStyle = `#e8efe9`),
-        e.fillRect(this.player.x - 20, this.player.y - 8, 40, 16)),
-        this.shipKit.drone &&
-          ((e.fillStyle = `#3ec7c2`),
-          e.beginPath(),
-          e.arc(
-            this.player.x + 8,
-            this.player.y + Math.sin(this.time * 6) * 26,
-            5,
-            0,
-            Math.PI * 2,
-          ),
-          e.fill()));
+          ((e.fillStyle = `#e8efe9`),
+          e.fillRect(this.player.x - 20, this.player.y - 8, 40, 16));
+      }
+      this.shipKit.drone &&
+        ((e.fillStyle = `#3ec7c2`),
+        e.beginPath(),
+        e.arc(
+          this.player.x + 8,
+          this.player.y + Math.sin(this.time * 6) * 26,
+          5,
+          0,
+          Math.PI * 2,
+        ),
+        e.fill());
       let n = this.frame(this.art.fishside);
       for (let t of this.fish)
-        this.sprite(n, t.x, t.y, 78, 42) ||
-          ((e.fillStyle = `#7a4ad4`),
-          e.beginPath(),
-          e.ellipse(t.x, t.y, 26, 12, 0, 0, Math.PI * 2),
-          e.fill());
-      if (this.bossOn && this.boss.hp > 0) {
-        let t = this.art.boss[0];
-        this.sprite(
-          t && t.complete ? t : void 0,
-          this.boss.x,
-          this.boss.y,
-          250,
-          170,
-        ) ||
-          ((e.fillStyle = `#7a4ad4`),
-          e.beginPath(),
-          e.ellipse(this.boss.x, this.boss.y, 90, 50, 0, 0, Math.PI * 2),
-          e.fill());
-      }
+        this.imgOk(this.rim?.fishside)
+          ? e.drawImage(this.rim.fishside, t.x - 52, t.y - 18, 104, 36)
+          : this.sprite(n, t.x, t.y, 78, 42) ||
+            ((e.fillStyle = `#7a4ad4`),
+            e.beginPath(),
+            e.ellipse(t.x, t.y, 26, 12, 0, 0, Math.PI * 2),
+            e.fill());
+      if (this.bossOn && this.boss.hp > 0)
+        this.imgOk(this.rim?.boss)
+          ? e.drawImage(this.rim.boss, this.boss.x - 160, this.boss.y - 60, 320, 120)
+          : this.sprite(
+              this.art.boss[0]?.complete ? this.art.boss[0] : void 0,
+              this.boss.x,
+              this.boss.y,
+              250,
+              170,
+            ) ||
+            ((e.fillStyle = `#7a4ad4`),
+            e.beginPath(),
+            e.ellipse(this.boss.x, this.boss.y, 90, 50, 0, 0, Math.PI * 2),
+            e.fill());
       for (let t of this.pickups) {
         ((e.fillStyle = t.kind === `shield` ? `#d4a24a` : `#3ec7c2`),
           e.beginPath(),
@@ -1757,6 +1856,18 @@ var p = class {
           e.fill());
       e.restore();
     }
+    paintFlight(e) {
+      ((e.fillStyle = `#05070c`), e.fillRect(0, 0, 960, 540));
+      let t = this.rim.jupiter,
+        n = -((this.scroll * 0.03) % 80);
+      e.drawImage(t, n - 220, -16, 1320, 572);
+      for (let t = 0; t < 36; t++) {
+        let n = (((t * 97 + this.scroll * 0.35) % 960) + 960) % 960,
+          r = (t * 53) % 220;
+        ((e.fillStyle = `rgba(232,239,233,0.75)`),
+          e.fillRect(n, r, t % 6 === 0 ? 2 : 1, 1));
+      }
+    }
     paintSky() {
       let e = this.ctx;
       if (e) {
@@ -1779,17 +1890,30 @@ var p = class {
       }
       let n = this.ctx;
       if (!n) return;
-      ((this.camX = 0),
-        this.paintSky(),
-        (n.fillStyle = `#1a242c`),
-        n.fillRect(0, 300, 960, 240),
-        (n.fillStyle = `#24303a`),
-        n.fillRect(80, 250, 220, 70),
-        n.fillRect(340, 230, 160, 90),
-        n.fillRect(540, 260, 200, 60));
-      let r = this.art.astro[2],
+      ((this.camX = 0), this.paintSky());
+      if (
+        (e === `jupiter` || e === `victory` || e === `launch`) &&
+        this.imgOk(this.rim?.jupiter)
+      )
+        n.drawImage(this.rim.jupiter, 0, 0, 960, 540);
+      else if (e === `walk` && this.imgOk(this.rim?.ground))
+        n.drawImage(this.rim.ground, 0, 40, 960, 500);
+      else if (this.imgOk(this.rim?.rescue))
+        n.drawImage(this.rim.rescue, 0, 160, 960, 380);
+      else
+        ((n.fillStyle = `#1a242c`),
+          n.fillRect(0, 300, 960, 240),
+          (n.fillStyle = `#24303a`),
+          n.fillRect(80, 250, 220, 70),
+          n.fillRect(340, 230, 160, 90),
+          n.fillRect(540, 260, 200, 60));
+      let r = this.imgOk(this.rim?.miner?.[2])
+          ? this.rim.miner[2]
+          : this.art.astro[2],
         i = this.frame(this.art.fishtd, 8),
-        a = this.frame(this.art.ship, 10),
+        a = this.imgOk(this.rim?.ship)
+          ? this.rim.ship
+          : this.frame(this.art.ship, 10),
         o = c(t, 0, 1);
       if (e === `walk`) {
         let e = 80 + o * 220;
@@ -1856,14 +1980,16 @@ var p = class {
         let e = 360 - o * 220;
         this.sprite(a, 480, e, 110, 52);
       } else if (e === `jupiter`) {
-        let e = n.createRadialGradient(680, 260, 20, 680, 260, 150);
-        (e.addColorStop(0, `#d4a24a`),
-          e.addColorStop(1, `#8a4b22`),
-          (n.fillStyle = e),
-          n.beginPath(),
-          n.arc(680, 260, 120, 0, Math.PI * 2),
-          n.fill(),
-          this.sprite(a, 180, 300, 90, 42));
+        if (!this.imgOk(this.rim?.jupiter)) {
+          let e = n.createRadialGradient(680, 260, 20, 680, 260, 150);
+          (e.addColorStop(0, `#d4a24a`),
+            e.addColorStop(1, `#8a4b22`),
+            (n.fillStyle = e),
+            n.beginPath(),
+            n.arc(680, 260, 120, 0, Math.PI * 2),
+            n.fill());
+        }
+        this.sprite(a, 180, 300, 90, 42);
         for (let e = 0; e < 6; e++)
           this.sprite(i, 480 + e * 28, 120 + (e % 3) * 40, 54, 26, Math.PI);
       } else
@@ -2044,7 +2170,8 @@ function h() {
     [touchUi, setTouchUi] = (0, r.useState)(!1),
     [portrait, setPortrait] = (0, r.useState)(!1),
     [forced, setForced] = (0, r.useState)(!1),
-    [vp, setVp] = (0, r.useState)({ w: 0, h: 0 });
+    [vp, setVp] = (0, r.useState)({ w: 0, h: 0 }),
+    [music, setMusicUi] = (0, r.useState)(0.7);
   (0, r.useEffect)(() => {
     let e = () => {
       let t = window.matchMedia?.(`(pointer: coarse)`).matches,
@@ -2089,6 +2216,14 @@ function h() {
         (r.detach(), (t.current = null));
       }
     );
+  }, []);
+  (0, r.useEffect)(() => {
+    try {
+      let e = localStorage.getItem(`spacefish-music`);
+      if (e == null) return;
+      let n = Math.max(0, Math.min(1, parseFloat(e) || 0));
+      (setMusicUi(n), t.current?.setMusic(n));
+    } catch {}
   }, []);
   (0, r.useEffect)(() => {
     let n = requestAnimationFrame(() => t.current?.resize());
@@ -2314,6 +2449,10 @@ function h() {
                       className: `text-xs leading-relaxed text-muted`,
                       children: `WASD moves. Shift sneaks. Space fires. Q throws noise. E uses. Space also steps a scene forward. Esc pauses. On a phone, turn sideways: drag the stick, or tap the ground to walk.`,
                     }),
+                    s &&
+                      musicKnob(music, (e) => {
+                        (setMusicUi(e), t.current?.setMusic(e));
+                      }),
                   ],
                 }),
               a.mode === `credits` &&
@@ -2325,7 +2464,10 @@ function h() {
                     }),
                     (0, m.jsx)(`p`, {
                       className: `max-w-md text-sm leading-relaxed text-muted`,
-                      children: `Spacefish is a three-phase run: stealth on the lunar rim, a short rescue, a small base, then a flight to Jupiter. The crew, the fish, and the ship are painted sprites. Sound is synthesized here when you press Start.`,
+                      children: `Spacefish is a three-phase run: stealth on the lunar rim, a short rescue, a small base, then a flight to Jupiter. The crew, the fish, and the ship are painted sprites. Music is original Raven Flock music composed in Aerie.`,
+                    }),
+                    musicKnob(music, (e) => {
+                      (setMusicUi(e), t.current?.setMusic(e));
                     }),
                     (0, m.jsx)(`button`, {
                       type: `button`,
@@ -2341,6 +2483,9 @@ function h() {
                     (0, m.jsx)(`h1`, {
                       className: `font-display text-3xl font-bold`,
                       children: `Paused`,
+                    }),
+                    musicKnob(music, (e) => {
+                      (setMusicUi(e), t.current?.setMusic(e));
                     }),
                     (0, m.jsxs)(`div`, {
                       className: `flex gap-2`,
@@ -2534,6 +2679,24 @@ function h() {
             }),
           ],
         }),
+    ],
+  });
+}
+function musicKnob(e, t) {
+  return (0, m.jsxs)(`label`, {
+    className: `flex items-center gap-3 text-xs text-muted`,
+    children: [
+      `Music`,
+      (0, m.jsx)(`input`, {
+        type: `range`,
+        min: `0`,
+        max: `1`,
+        step: `0.05`,
+        value: e,
+        "aria-label": `Music volume`,
+        onChange: (e) => t(Number(e.target.value)),
+        style: { width: `9rem`, accentColor: `#d4a24a` },
+      }),
     ],
   });
 }
