@@ -314,6 +314,7 @@ var p = class {
     acc = 0;
     unbind = [];
     art = { astro: [], fishtd: [], fishside: [], ship: [], prop: [], boss: [] };
+    rim = null;
     view = { dpr: 1, scale: 1, ox: 0, oy: 0 };
     tap = null;
     constructor(e) {
@@ -1314,6 +1315,26 @@ var p = class {
         prop: t(`prop`, 4),
         boss: t(`boss`, 1),
       };
+      this.loadRim();
+    }
+    loadRim() {
+      let e = (e) => {
+        let t = new Image();
+        return ((t.src = e), t);
+      };
+      this.rim = {
+        ground: e(`rim/ground.jpg`),
+        horizon: e(`rim/horizon.jpg`),
+        dome: e(`rim/dome.png`),
+        rock: e(`rim/rock.png`),
+        crate: e(`rim/crate.png`),
+        robot: e(`rim/robot.png`),
+        fish: e(`rim/fish.png`),
+        miner: [0, 1, 2, 3].map((t) => e(`rim/miner${t}.png`)),
+      };
+    }
+    imgOk(e) {
+      return !!(e && e.complete && e.naturalWidth);
     }
     frame(e, t = 8) {
       if (!e.length) return;
@@ -1369,32 +1390,52 @@ var p = class {
       (this.updateCam(),
         this.paintSky(),
         e.save(),
-        e.translate(-this.camX, -this.camY),
-        (e.fillStyle = this.phase === `rescue` ? `#12181e` : `#1a242c`),
-        e.fillRect(0, 0, this.world.w, this.world.h),
-        (e.strokeStyle = `rgba(232,239,233,0.05)`),
-        (e.lineWidth = 1));
-      for (let t = 0; t < this.world.w; t += 80)
-        (e.beginPath(), e.moveTo(t, 0), e.lineTo(t, this.world.h), e.stroke());
-      for (let t of this.covers)
-        ((e.fillStyle = this.phase === `rescue` ? `#24303a` : `#2c3a44`),
-          e.fillRect(t.x, t.y, t.w, t.h),
-          (e.strokeStyle = `rgba(62,199,194,0.35)`),
-          e.strokeRect(
-            t.x + 4,
-            t.y + 4,
-            Math.max(0, t.w - 8),
-            Math.max(0, t.h - 8),
-          ));
+        e.translate(-this.camX, -this.camY));
+      if (this.phase === `stealth` && this.imgOk(this.rim?.ground))
+        this.drawRimTerrain(e);
+      else {
+        ((e.fillStyle = this.phase === `rescue` ? `#12181e` : `#1a242c`),
+          e.fillRect(0, 0, this.world.w, this.world.h),
+          (e.strokeStyle = `rgba(232,239,233,0.05)`),
+          (e.lineWidth = 1));
+        for (let t = 0; t < this.world.w; t += 80)
+          (e.beginPath(),
+            e.moveTo(t, 0),
+            e.lineTo(t, this.world.h),
+            e.stroke());
+        for (let t of this.covers)
+          ((e.fillStyle = this.phase === `rescue` ? `#24303a` : `#2c3a44`),
+            e.fillRect(t.x, t.y, t.w, t.h),
+            (e.strokeStyle = `rgba(62,199,194,0.35)`),
+            e.strokeRect(
+              t.x + 4,
+              t.y + 4,
+              Math.max(0, t.w - 8),
+              Math.max(0, t.h - 8),
+            ));
+      }
       if (this.phase === `stealth`) {
-        for (let e of this.fish) this.drawCone(e);
-        ((e.fillStyle = `rgba(212,162,74,0.9)`),
-          e.beginPath(),
-          e.arc(this.cache.x, this.cache.y, 18, 0, Math.PI * 2),
-          e.fill(),
-          (e.fillStyle = `#e8efe9`),
+        for (let t of this.fish) this.drawCone(t);
+        if (this.imgOk(this.rim?.crate)) {
+          (e.save(),
+            e.translate(this.cache.x, this.cache.y));
+          let t = e.createRadialGradient(0, 0, 4, 0, 0, 48);
+          ((t.addColorStop(0, `rgba(212,162,74,0.55)`),
+            t.addColorStop(1, `rgba(212,162,74,0)`),
+            (e.fillStyle = t),
+            e.beginPath(),
+            e.arc(0, 0, 48, 0, Math.PI * 2),
+            e.fill(),
+            e.drawImage(this.rim.crate, -28, -24, 56, 48),
+            e.restore()));
+        } else
+          ((e.fillStyle = `rgba(212,162,74,0.9)`),
+            e.beginPath(),
+            e.arc(this.cache.x, this.cache.y, 18, 0, Math.PI * 2),
+            e.fill());
+        ((e.fillStyle = `#e8efe9`),
           (e.font = `12px Sora, sans-serif`),
-          e.fillText(`CACHE`, this.cache.x - 22, this.cache.y - 26));
+          e.fillText(`CACHE`, this.cache.x - 22, this.cache.y - 34));
       }
       if (this.phase === `base`) {
         ((e.strokeStyle = `#d4a24a`),
@@ -1456,11 +1497,21 @@ var p = class {
         e.fill());
       let t = this.frame(this.art.fishtd);
       for (let n of this.fish)
-        this.sprite(t, n.x, n.y, 64, 30, n.facing) ||
-          ((e.fillStyle = `#7a4ad4`),
-          e.beginPath(),
-          e.ellipse(n.x, n.y, 22, 10, n.facing, 0, Math.PI * 2),
-          e.fill());
+        this.phase === `stealth` && this.imgOk(this.rim?.fish)
+          ? (e.save(),
+            e.translate(n.x, n.y),
+            e.rotate(n.facing),
+            (e.fillStyle = `rgba(0,0,0,0.4)`),
+            e.beginPath(),
+            e.ellipse(8, 6, 30, 8, 0, 0, Math.PI * 2),
+            e.fill(),
+            e.drawImage(this.rim.fish, -44, -18, 88, 36),
+            e.restore())
+          : this.sprite(t, n.x, n.y, 64, 30, n.facing) ||
+            ((e.fillStyle = `#7a4ad4`),
+            e.beginPath(),
+            e.ellipse(n.x, n.y, 22, 10, n.facing, 0, Math.PI * 2),
+            e.fill());
       for (let t of this.bullets)
         ((e.fillStyle = t.friendly
           ? this.weapon === `laser`
@@ -1470,26 +1521,110 @@ var p = class {
           e.beginPath(),
           e.arc(t.x, t.y, t.r, 0, Math.PI * 2),
           e.fill());
-      let n = this.art.astro[this.dir];
+      let n = this.art.astro[this.dir],
+        rimMiner = this.phase === `stealth` && this.rim?.miner?.[this.dir];
       if (this.tap) this.drawTap(e);
-      this.sprite(
-        n && n.complete ? n : void 0,
-        this.player.x,
-        this.player.y,
-        42,
-        64,
-      ) ||
-        ((e.fillStyle = `#e8efe9`),
-        e.fillRect(this.player.x - 8, this.player.y - 14, 16, 28));
+      if (this.imgOk(rimMiner))
+        (e.save(),
+          e.translate(this.player.x, this.player.y),
+          (e.fillStyle = `rgba(0,0,0,0.45)`),
+          e.beginPath(),
+          e.ellipse(8, 18, 14, 5, 0.4, 0, Math.PI * 2),
+          e.fill(),
+          e.drawImage(rimMiner, -24, -38, 48, 74),
+          e.restore());
+      else
+        this.sprite(
+          n && n.complete ? n : void 0,
+          this.player.x,
+          this.player.y,
+          42,
+          64,
+        ) ||
+          ((e.fillStyle = `#e8efe9`),
+          e.fillRect(this.player.x - 8, this.player.y - 14, 16, 28));
       for (let t of this.particles)
         ((e.globalAlpha = Math.max(0, t.life / t.max)),
           (e.fillStyle = t.color),
           e.fillRect(t.x, t.y, t.s, t.s),
           (e.globalAlpha = 1));
       (e.restore(),
+        this.phase === `stealth` &&
+          this.imgOk(this.rim?.ground) &&
+          this.drawRimAtmosphere(e),
         this.drawArrow(),
         this.invuln > 0 &&
           ((e.fillStyle = `rgba(226,91,74,0.18)`), e.fillRect(0, 0, 960, 540)));
+    }
+    drawRimTerrain(e) {
+      let t = this.rim.ground;
+      (e.drawImage(t, 0, 0, this.world.w, this.world.h));
+      let n = e.createLinearGradient(0, 0, this.world.w, this.world.h * 0.35);
+      (n.addColorStop(0, `rgba(255,168,90,0.08)`),
+        n.addColorStop(1, `rgba(0,0,0,0.28)`),
+        (e.fillStyle = n),
+        e.fillRect(0, 0, this.world.w, this.world.h));
+      for (let t = 0; t < this.covers.length; t++) {
+        let n = this.covers[t],
+          r = n.h > 180,
+          i = n.x === 700 && n.y === 990,
+          a = this.rim.rock;
+        if (this.imgOk(a))
+          (e.save(),
+            (e.globalAlpha = r ? 0.72 : 1),
+            e.drawImage(a, n.x, n.y, n.w, n.h),
+            e.restore());
+        let o = i ? this.rim.robot : r ? this.rim.dome : null;
+        if (!this.imgOk(o)) continue;
+        let s = Math.min(n.w / o.naturalWidth, n.h / o.naturalHeight),
+          c = o.naturalWidth * s,
+          l = o.naturalHeight * s;
+        (e.save(),
+          e.translate(n.x + n.w / 2, n.y + n.h / 2),
+          t % 2 && e.scale(-1, 1),
+          e.drawImage(o, -c / 2, -l / 2, c, l),
+          e.restore());
+      }
+      e.fillStyle = `rgba(232,224,208,0.7)`;
+      for (let t = 0; t < 40; t++) {
+        let n =
+            (t * 173 + this.time * (8 + (t % 6))) % this.world.w,
+          r = (t * 97 + Math.sin(this.time * 0.6 + t) * 8) % this.world.h;
+        ((e.globalAlpha = 0.12 + (t % 5) * 0.05),
+          e.fillRect(n, r < 0 ? r + this.world.h : r, t % 4 === 0 ? 2 : 1, 1));
+      }
+      e.globalAlpha = 1;
+    }
+    drawRimAtmosphere(e) {
+      let t = this.rim?.horizon;
+      if (this.imgOk(t)) {
+        e.save();
+        let n = -((this.camX * 0.15) % 220);
+        (e.drawImage(
+          t,
+          0,
+          Math.floor(t.naturalHeight * 0.12),
+          t.naturalWidth,
+          Math.floor(t.naturalHeight * 0.46),
+          n - 40,
+          0,
+          1120,
+          108,
+        ));
+        let r = e.createLinearGradient(0, 36, 0, 112);
+        (r.addColorStop(0, `rgba(8,10,14,0)`),
+          r.addColorStop(1, `rgba(8,10,14,0.97)`),
+          (e.fillStyle = r),
+          e.fillRect(0, 0, 960, 116),
+          e.restore());
+      }
+      e.save();
+      let n = e.createRadialGradient(480, 310, 150, 480, 280, 640);
+      (n.addColorStop(0, `rgba(0,0,0,0)`),
+        n.addColorStop(1, `rgba(0,0,0,0.42)`),
+        (e.fillStyle = n),
+        e.fillRect(0, 0, 960, 540),
+        e.restore());
     }
     drawCone(e) {
       let t = this.ctx;
@@ -1874,6 +2009,31 @@ function stickOut(e, t, n) {
   }
   return { x: u, y: d, vx: i * s, vy: a * s };
 }
+function phoneTouch() {
+  let e = window.matchMedia?.(`(pointer: coarse)`).matches,
+    t = window.matchMedia?.(`(hover: none)`).matches;
+  return !!(e || t);
+}
+let landscapeFs = !1;
+function lockLandscape(e) {
+  if (!phoneTouch()) return Promise.resolve(!1);
+  let t = screen.orientation;
+  if (!t || !t.lock) return Promise.resolve(!1);
+  return t
+    .lock(`landscape`)
+    .then(() => !0)
+    .catch(() => {
+      if (!e || landscapeFs) return !1;
+      landscapeFs = !0;
+      let t = document.documentElement,
+        n = t.requestFullscreen || t.webkitRequestFullscreen;
+      if (!n || document.fullscreenElement) return !1;
+      return Promise.resolve(n.call(t))
+        .then(() => screen.orientation.lock(`landscape`))
+        .then(() => !0)
+        .catch(() => !1);
+    });
+}
 function h() {
   let e = (0, r.useRef)(null),
     t = (0, r.useRef)(null),
@@ -1884,7 +2044,8 @@ function h() {
     [knob, setKnob] = (0, r.useState)({ x: 0, y: 0 }),
     [touchUi, setTouchUi] = (0, r.useState)(!1),
     [portrait, setPortrait] = (0, r.useState)(!1),
-    [anyway, setAnyway] = (0, r.useState)(!1);
+    [anyway, setAnyway] = (0, r.useState)(!1),
+    frameRef = (0, r.useRef)(null);
   (0, r.useEffect)(() => {
     let e = () => {
       let t = window.matchMedia?.(`(pointer: coarse)`).matches,
@@ -1924,6 +2085,36 @@ function h() {
       }
     );
   }, []);
+  (0, r.useEffect)(() => {
+    let pad = (e) => {
+      if (!e) return;
+      ((e.style.top = `env(safe-area-inset-top)`),
+        (e.style.right = `env(safe-area-inset-right)`),
+        (e.style.bottom = `env(safe-area-inset-bottom)`),
+        (e.style.left = `env(safe-area-inset-left)`),
+        (e.style.width = `auto`),
+        (e.style.height = `auto`));
+    };
+    (pad(e.current), pad(frameRef.current));
+  }, []);
+  (0, r.useEffect)(() => {
+    let n = () => {
+        phoneTouch() &&
+          window.innerWidth + 40 >= window.innerHeight &&
+          lockLandscape(!1);
+      },
+      i = () => {
+        phoneTouch() && lockLandscape(!0);
+      };
+    return (
+      window.addEventListener(`orientationchange`, n),
+      window.addEventListener(`pointerdown`, i),
+      () => {
+        (window.removeEventListener(`orientationchange`, n),
+          window.removeEventListener(`pointerdown`, i));
+      }
+    );
+  }, []);
   let l = a.mode === `play` || a.mode === `pause`,
     u = (e) => {
       if (i.current !== e.pointerId || !n.current) return;
@@ -1950,6 +2141,7 @@ function h() {
             className: `absolute inset-0 h-full w-full touch-none`,
           }),
           (0, m.jsxs)(`div`, {
+            ref: frameRef,
             className: `pointer-events-none absolute inset-0 flex flex-col`,
             children: [
               l &&
@@ -2350,11 +2542,17 @@ function h() {
             }),
             (0, m.jsx)(`h1`, {
               className: `font-display text-3xl font-bold`,
-              children: `Rotate your phone for the best experience`,
+              children: `Rotate to landscape`,
             }),
             (0, m.jsx)(`p`, {
               className: `max-w-xs text-sm text-muted`,
-              children: `The rim is wider than it is tall. Turn sideways, then use the stick or tap the ground to walk.`,
+              children: `Turn the phone sideways. The rim locks to landscape when the browser allows it.`,
+            }),
+            (0, m.jsx)(`button`, {
+              type: `button`,
+              className: `rounded-lg bg-primary px-5 py-3 font-display font-bold text-on-primary`,
+              onClick: () => lockLandscape(!0),
+              children: `Lock landscape`,
             }),
             (0, m.jsx)(`button`, {
               type: `button`,
