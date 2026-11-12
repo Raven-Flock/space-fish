@@ -1,0 +1,50 @@
+name: ci
+
+# PR checks for the editable source. This workflow never deploys:
+# GitHub Pages keeps serving main / exactly as before.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install (lockfile only)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Parity tests vs live 69cf5be
+        run: npm test
+
+      - name: Build site (vite build + static copy + dist guard)
+        run: npm run build
+
+      - name: Guard - no source, maps, env or manifests in the artifact
+        run: node scripts/check-dist.mjs
+
+      - name: Upload built site for QA
+        uses: actions/upload-artifact@v4
+        with:
+          name: space-fish-site-${{ github.event.pull_request.head.sha || github.sha }}
+          path: dist/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
