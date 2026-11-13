@@ -1,0 +1,29 @@
+{
+  "name": "space-fish",
+  "private": true,
+  "version": "0.0.0-r0",
+  "type": "module",
+  "description": "Spacefish editable source (R0 parity rebuild of live 69cf5be).",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/copy-static.mjs && node scripts/check-dist.mjs",
+    "preview": "vite preview --outDir dist",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "jsdom": "31.0.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
