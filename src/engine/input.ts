@@ -28,12 +28,13 @@ export const inputMethods = {
     window.addEventListener("blur", n);
     let r = this.canvas;
     let i = (e) => {
-      let t = this.eventToWorld(e);
-      if (t) {
-        this.aimX = t.x;
-        this.aimY = t.y;
-        this.aimOk = t.inside;
+      if (e.pointerType === "touch") {
+        return;
       }
+      this.aimClientX = e.clientX;
+      this.aimClientY = e.clientY;
+      this.aimPointer = "mouse";
+      this.aimOk = true;
     };
     let a = (e) => {
       let n = e.pointerType === "touch" || e.pointerType === "pen";
@@ -42,6 +43,22 @@ export const inputMethods = {
       }
       let t = this.eventToWorld(e);
       if (!t?.inside) {
+        return;
+      }
+      if (
+        this.mode === "play" &&
+        this.phase === "base" &&
+        this.nearestWreck(t.x, t.y, 72)
+      ) {
+        this.tryPlace(t.x, t.y);
+        return;
+      }
+      if (n && this.fireLatch && this.mode === "play" && this.weapon === "laser") {
+        this.aimX = t.x;
+        this.aimY = t.y;
+        this.aimPointer = "touch";
+        this.aimOk = true;
+        this.shotPulse = true;
         return;
       }
       if (n && this.mode === "play" && !(this.phase === "base" && this.build)) {
@@ -53,7 +70,15 @@ export const inputMethods = {
       }
       if (this.mode === "play" && this.phase === "base" && this.build) {
         this.tryPlace(t.x, t.y);
-      } else if (this.mode === "play") {
+      } else if (this.mode === "play" && this.weapon === "laser") {
+        if (!n) {
+          this.aimClientX = e.clientX;
+          this.aimClientY = e.clientY;
+          this.aimPointer = "mouse";
+          this.aimOk = true;
+        }
+        this.shotPulse = true;
+      } else if (this.mode === "play" && this.weapon !== "laser") {
         this.shotPulse = true;
       }
     };
@@ -157,8 +182,25 @@ export const inputMethods = {
     }
   },
   aimAngle(this: Game) {
-    if (this.aimOk && this.qaKeys == null) {
-      return Math.atan2(this.aimY - this.player.y, this.aimX - this.player.x);
+    if (this.qaKeys == null && this.aimOk && this.aimPointer !== "touch") {
+      let w = this.eventToWorld({
+        clientX: this.aimClientX,
+        clientY: this.aimClientY,
+      });
+      if (w) {
+        let dx = w.x - this.player.x;
+        let dy = w.y - this.player.y;
+        if (dx * dx + dy * dy > 36) {
+          return Math.atan2(dy, dx);
+        }
+      }
+    }
+    if (this.qaKeys == null && this.aimOk && this.aimPointer === "touch") {
+      let dx = this.aimX - this.player.x;
+      let dy = this.aimY - this.player.y;
+      if (dx * dx + dy * dy > 36) {
+        return Math.atan2(dy, dx);
+      }
     }
     let e = this.dirVector();
     return Math.atan2(e.y, e.x);

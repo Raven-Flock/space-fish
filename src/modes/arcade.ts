@@ -83,6 +83,14 @@ export const arcadeMethods = {
     // back to the transit layout exactly like live's default branch.
     const ch: ChapterLayout = CHAPTERS[phase] ?? CHAPTERS.shooter;
     this.weapon = ch.weapon;
+    this.shovelT = 0;
+    this.structures = (ch.wrecks ?? []).map((w) => ({
+      kind: w.kind,
+      x: w.x,
+      y: w.y,
+      cool: 0,
+      repaired: false,
+    }));
     if (ch.freedCount !== undefined) this.freedCount = ch.freedCount;
     if (ch.scrap !== undefined) this.scrap = ch.scrap;
     if (ch.resetFirstBuild) this.sawFirstBuild = false;

@@ -18,7 +18,7 @@ export function initialSnap() {
     bossMax: 1,
     canLaunch: false,
     hasSave: false,
-    weapon: "Sidearm",
+    weapon: "Shovel",
     build: null,
     shield: false,
     spread: false,

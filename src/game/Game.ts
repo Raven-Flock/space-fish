@@ -41,6 +41,9 @@ export class Game {
   aimX = 0;
   aimY = 0;
   aimOk = false;
+  aimClientX = 0;
+  aimClientY = 0;
+  aimPointer = "mouse";
   prevE = false;
   prevQ = false;
   hudAcc = 0;
@@ -57,8 +60,9 @@ export class Game {
   lastYaw = 0;
   dir = 0;
   invuln = 0;
-  weapon = "pistol";
+  weapon = "shovel";
   fireCd = 0;
+  shovelT = 0;
   alert = 0;
   alerted = false;
   lastSeen = {
@@ -196,6 +200,7 @@ export class Game {
     this.time += dt;
     this.invuln = Math.max(0, this.invuln - dt);
     this.fireCd = Math.max(0, this.fireCd - dt);
+    this.shovelT = Math.max(0, this.shovelT - dt);
     this.decoyCd = Math.max(0, this.decoyCd - dt);
     this.shake = Math.max(0, this.shake - dt * 1.8);
     this.stepParticles(dt);
@@ -284,7 +289,7 @@ export class Game {
           ? "Laser"
           : this.weapon === "ship"
             ? "Ship guns"
-            : "Sidearm",
+            : "Shovel",
       build: this.build,
       shield: this.shipKit.shield,
       spread: this.shipKit.spread,
@@ -295,22 +300,23 @@ export class Game {
   }
   counts() {
     return {
-      gens: this.structures.filter((e) => e.kind === "gen").length,
-      turrets: this.structures.filter((e) => e.kind === "turret").length,
-      labs: this.structures.filter((e) => e.kind === "lab").length,
+      gens: this.structures.filter((e) => e.kind === "gen" && e.repaired).length,
+      turrets: this.structures.filter((e) => e.kind === "turret" && e.repaired)
+        .length,
+      labs: this.structures.filter((e) => e.kind === "lab" && e.repaired).length,
     };
   }
   objective() {
     return this.phase === "stealth"
-      ? "Reach the weapons cache. Stay out of the cones."
+      ? "Reach the weapons cache. Shovel only. Stay out of the cones."
       : this.phase === "rescue"
         ? `Free the holdouts (${this.freedCount}/3). Clear fish, then Use.`
         : this.phase === "base"
           ? this.nest.hp > 0
-            ? "Gather scrap. Build power, two turrets, and a lab. Burn the nest."
+            ? "Gather scrap. Repair the generator, two turrets, and the lab. Burn the nest."
             : this.launchReady()
               ? "Launch is ready. Stand on the brass pad and press Use."
-              : "Nest is cold. Finish the generator, two turrets, and the lab."
+              : "Nest is cold. Finish repairing the generator, two turrets, and the lab."
           : this.bossOn
             ? "Break the eye over Jupiter."
             : "Fly east. Take the kits. Jupiter is ahead.";

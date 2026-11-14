@@ -10,7 +10,15 @@ declare global {
       getYaw: () => number;
       getSpeed: () => number;
       getX: () => number;
+      getTime?: () => number;
+      getMode?: () => string;
       setKeys: (keys: string[]) => void;
+      getWeapon?: () => string;
+      bulletCount?: () => number;
+      setTouchAim?: (x: number, y: number) => void;
+      pulseShot?: () => void;
+      bullet?: () => { vx: number; vy: number } | null;
+      wrecks?: () => Array<{ kind: string; repaired: boolean }>;
     };
     /** Set by the inline boot script in index.html (Pages base path). */
     __SF_BASEPATH?: string;

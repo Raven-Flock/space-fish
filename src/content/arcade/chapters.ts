@@ -16,7 +16,7 @@ export type FishSpawn = {
   wps: Pt[];
 };
 export interface ChapterLayout {
-  weapon: "pistol" | "laser" | "ship";
+  weapon: "shovel" | "laser" | "ship";
   world: {
     w: number;
     h: number;
@@ -51,6 +51,12 @@ export interface ChapterLayout {
   }>;
   /** Transit: schedule the four ship kits. */
   kits?: boolean;
+  /** Pre-placed wrecks the player repairs. Never free-placed. */
+  wrecks?: Array<{
+    kind: "gen" | "turret" | "lab";
+    x: number;
+    y: number;
+  }>;
 }
 export const CHAPTERS: Record<
   "stealth" | "rescue" | "base" | "shooter",
@@ -58,7 +64,7 @@ export const CHAPTERS: Record<
 > = {
   // Ch1 Rim: sneak to the laser cache
   stealth: {
-    weapon: "pistol",
+    weapon: "shovel",
     world: {
       w: 2000,
       h: 1100,
@@ -370,6 +376,12 @@ export const CHAPTERS: Record<
         y: 520,
         wps: [],
       },
+    ],
+    wrecks: [
+      { kind: "gen", x: 480, y: 360 },
+      { kind: "turret", x: 240, y: 500 },
+      { kind: "turret", x: 860, y: 640 },
+      { kind: "lab", x: 340, y: 920 },
     ],
   },
   // Ch4 Transit to Jupiter (side-scroll) + the Eye

@@ -72,14 +72,14 @@ export const CUTSCENES = {
     {
       dur: 2.8,
       kind: "rebuild",
-      caption: "Take the pad. Build. Burn the nest.",
+      caption: "Take the pad. Repair what's left. Burn the nest.",
     },
   ],
   firstbuild: [
     {
       dur: 2.5,
       kind: "rebuild",
-      caption: "Power's back on a single spar. Hold it.",
+      caption: "One spar is live again. Hold it.",
     },
   ],
   launch: [

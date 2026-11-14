@@ -41,6 +41,7 @@ export function BuildButton({
   return (
     <button
       type="button"
+      title={r ? "Selected for repair" : "Select, then tap the matching wreck"}
       className={`shrink-0 rounded-lg border px-3 py-2 text-sm font-bold ${r ? "border-primary bg-primary text-on-primary" : "border-border bg-bg"}`}
       onClick={() => n(e)}
     >

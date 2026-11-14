@@ -67,23 +67,17 @@ export const groundMethods = {
       ctx.fillText("CACHE", this.cache.x - 22, this.cache.y - 34);
     }
     if (this.phase === "base") {
-      ctx.strokeStyle = "#d4a24a";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(this.pad.x, this.pad.y, 36, 0, Math.PI * 2);
-      ctx.stroke();
-      if (this.imgOk(this.rim?.pad)) {
-        ctx.drawImage(this.rim.pad, this.pad.x - 54, this.pad.y - 54, 108, 108);
-      }
-      ctx.fillStyle = "#e8efe9";
-      ctx.font = "12px Sora, sans-serif";
-      ctx.fillText("PAD", this.pad.x - 14, this.pad.y - 44);
+      let padLive =
+        this.structures.filter((e) => e.kind === "gen" && e.repaired).length >=
+          1 &&
+        this.structures.filter((e) => e.kind === "turret" && e.repaired)
+          .length >= 2 &&
+        this.structures.filter((e) => e.kind === "lab" && e.repaired).length >=
+          1;
+      this.drawPadRig(ctx, padLive);
       for (let t of this.nodes) {
         if (!t.taken) {
-          ctx.fillStyle = "#d4a24a";
-          ctx.beginPath();
-          ctx.arc(t.x, t.y, 10, 0, Math.PI * 2);
-          ctx.fill();
+          this.drawScrap(ctx, t.x, t.y);
         }
       }
       if (this.nest.hp > 0) {
@@ -114,22 +108,7 @@ export const groundMethods = {
         }
       }
       for (let t of this.structures) {
-        let n =
-          t.kind === "gen"
-            ? this.rim?.gen
-            : t.kind === "turret"
-              ? this.rim?.turret
-              : this.rim?.lab;
-        let r =
-          this.art.prop[t.kind === "gen" ? 0 : t.kind === "turret" ? 1 : 2];
-        if (this.imgOk(n)) {
-          ctx.drawImage(n, t.x - 36, t.y - 34, 72, 68);
-        } else if (
-          !this.sprite(r && r.complete ? r : undefined, t.x, t.y, 72, 68)
-        ) {
-          ctx.fillStyle = "#3ec7c2";
-          ctx.fillRect(t.x - 20, t.y - 20, 40, 40);
-        }
+        this.drawRig(ctx, t);
       }
       for (let n = 0; n < this.freedCount; n++) {
         let r = this.rim?.miner?.[0];
@@ -210,6 +189,7 @@ export const groundMethods = {
       ctx.fill();
       ctx.drawImage(rimMiner, -24, -38, 48, 74);
       ctx.restore();
+      this.drawHeldTool(ctx);
     } else {
       if (
         !this.sprite(
@@ -223,6 +203,10 @@ export const groundMethods = {
         ctx.fillStyle = "#e8efe9";
         ctx.fillRect(this.player.x - 8, this.player.y - 14, 16, 28);
       }
+      this.drawHeldTool(ctx);
+    }
+    if (this.weapon === "laser" && this.phase !== "shooter") {
+      this.drawAim(ctx);
     }
     for (let t of this.particles) {
       ctx.globalAlpha = Math.max(0, t.life / t.max);
@@ -361,7 +345,7 @@ export const groundMethods = {
       if (this.launchReady()) {
         t = this.pad.x;
         n = this.pad.y;
-      } else if (this.nest.hp > 0 && this.structures.length >= 3) {
+      } else if (this.nest.hp > 0 && this.repairedTotal() >= 3) {
         t = this.nest.x;
         n = this.nest.y;
       } else {
@@ -391,6 +375,265 @@ export const groundMethods = {
     ctx.moveTo(12, 0);
     ctx.lineTo(-8, 7);
     ctx.lineTo(-8, -7);
+    ctx.fill();
+    ctx.restore();
+  },
+  repairedTotal(this: Game) {
+    return this.structures.filter((e) => e.repaired).length;
+  },
+  drawScrap(this: Game, ctx, x, y) {
+    let crate = this.rim?.crate;
+    if (this.imgOk(crate)) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.drawImage(crate, -16, -14, 32, 26);
+      ctx.fillStyle = "rgba(212,162,74,0.85)";
+      ctx.fillRect(-6, -4, 8, 5);
+      ctx.restore();
+      return;
+    }
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = "#8a7044";
+    ctx.beginPath();
+    ctx.moveTo(-12, 4);
+    ctx.lineTo(-8, -8);
+    ctx.lineTo(4, -10);
+    ctx.lineTo(12, 2);
+    ctx.lineTo(6, 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#d4a24a";
+    ctx.fillRect(-4, -3, 9, 6);
+    ctx.restore();
+  },
+  drawPadRig(this: Game, ctx, live) {
+    ctx.save();
+    ctx.translate(this.pad.x, this.pad.y);
+    if (!live) {
+      ctx.filter = "saturate(0.15) brightness(0.5)";
+    }
+    if (this.imgOk(this.rim?.pad)) {
+      ctx.drawImage(this.rim.pad, -54, -54, 108, 108);
+    } else {
+      ctx.filter = "none";
+      ctx.strokeStyle = live ? "#d4a24a" : "#5c5348";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 0, 40, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(0, 0, 22, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 4; i++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.fillStyle = live ? "#c8b48a" : "#3a342c";
+        ctx.fillRect(18, -4, 16, 8);
+      }
+    }
+    ctx.filter = "none";
+    if (!live) {
+      ctx.strokeStyle = "rgba(40,28,18,0.85)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-30, -8);
+      ctx.lineTo(-6, 6);
+      ctx.lineTo(18, -14);
+      ctx.lineTo(34, 10);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-18, 22);
+      ctx.lineTo(8, 4);
+      ctx.stroke();
+      let puff = (this.time * 14) % 26;
+      ctx.fillStyle = "rgba(160,160,160,0.22)";
+      ctx.beginPath();
+      ctx.arc(-10, -28 - puff * 0.4, 5 + puff * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      let glow = ctx.createRadialGradient(0, 0, 8, 0, 0, 58);
+      glow.addColorStop(0, "rgba(212,162,74,0.45)");
+      glow.addColorStop(1, "rgba(212,162,74,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 58, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.fillStyle = "#e8efe9";
+    ctx.font = "12px Sora, sans-serif";
+    ctx.fillText(live ? "PAD" : "PAD WRECK", this.pad.x - (live ? 14 : 32), this.pad.y - 58);
+  },
+  drawRig(this: Game, ctx, rig) {
+    let img =
+      rig.kind === "gen"
+        ? this.rim?.gen
+        : rig.kind === "turret"
+          ? this.rim?.turret
+          : this.rim?.lab;
+    ctx.save();
+    ctx.translate(rig.x, rig.y);
+    if (!rig.repaired) {
+      ctx.rotate(rig.kind === "turret" ? 0.22 : rig.kind === "lab" ? -0.1 : 0.06);
+      ctx.filter = "saturate(0.18) brightness(0.58) contrast(1.2)";
+    }
+    if (this.imgOk(img)) {
+      ctx.drawImage(img, -40, -38, 80, 76);
+    } else {
+      ctx.filter = "none";
+      this.drawRigShape(ctx, rig.kind, !!rig.repaired);
+    }
+    ctx.filter = "none";
+    if (!rig.repaired) {
+      ctx.fillStyle = "rgba(18,10,6,0.5)";
+      ctx.beginPath();
+      ctx.ellipse(8, 10, 24, 11, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#4a4036";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-22, -12);
+      ctx.lineTo(-4, 8);
+      ctx.lineTo(14, -4);
+      ctx.stroke();
+      if (Math.sin(this.time * 9 + rig.x) > 0.65) {
+        ctx.fillStyle = "rgba(255,176,80,0.4)";
+        ctx.beginPath();
+        ctx.arc(12, -16, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffc27a";
+        ctx.fillRect(11, -17, 3, 3);
+      }
+      let puff = (this.time * 16 + (rig.x % 17)) % 24;
+      ctx.fillStyle = "rgba(190,190,190,0.22)";
+      ctx.beginPath();
+      ctx.arc(-8, -24 - puff * 0.35, 4 + puff * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+      if (this.build === rig.kind) {
+        ctx.strokeStyle = "#d4a24a";
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(-44, -42, 88, 84);
+        ctx.setLineDash([]);
+      }
+    } else {
+      let glow = ctx.createRadialGradient(0, 0, 6, 0, 0, 46);
+      let color =
+        rig.kind === "gen"
+          ? "rgba(62,199,194,0.4)"
+          : rig.kind === "turret"
+            ? "rgba(212,162,74,0.35)"
+            : "rgba(122,74,212,0.35)";
+      glow.addColorStop(0, color);
+      glow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(0, 0, 46, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  },
+  drawRigShape(this: Game, ctx, kind, live) {
+    ctx.fillStyle = live ? "#2c3a40" : "#1a1816";
+    ctx.strokeStyle = live ? "#d4a24a" : "#5a5046";
+    ctx.lineWidth = 2;
+    if (kind === "gen") {
+      ctx.fillRect(-28, -16, 56, 32);
+      ctx.strokeRect(-28, -16, 56, 32);
+      ctx.fillStyle = live ? "#3ec7c2" : "#3a342c";
+      ctx.beginPath();
+      ctx.arc(-10, -2, 10, 0, Math.PI * 2);
+      ctx.arc(12, -2, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#8a8174";
+      ctx.beginPath();
+      ctx.moveTo(-28, 8);
+      ctx.lineTo(-36, 18);
+      ctx.moveTo(28, 8);
+      ctx.lineTo(36, 18);
+      ctx.stroke();
+    } else if (kind === "turret") {
+      ctx.beginPath();
+      ctx.arc(0, 4, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.save();
+      ctx.rotate(-0.4);
+      ctx.fillStyle = live ? "#c8b48a" : "#4a433c";
+      ctx.fillRect(0, -4, 36, 8);
+      ctx.restore();
+    } else {
+      ctx.fillRect(-26, -6, 52, 28);
+      ctx.strokeRect(-26, -6, 52, 28);
+      ctx.beginPath();
+      ctx.arc(0, -6, 16, Math.PI, 0);
+      ctx.fillStyle = live ? "rgba(122,74,212,0.85)" : "#2a2430";
+      ctx.fill();
+      ctx.stroke();
+    }
+  },
+  drawHeldTool(this: Game, ctx) {
+    let ang =
+      this.dir === 1
+        ? Math.PI
+        : this.dir === 2
+          ? 0
+          : this.dir === 3
+            ? -Math.PI / 2
+            : Math.PI / 2;
+    let swing =
+      this.shovelT > 0 ? Math.sin((1 - this.shovelT / 0.34) * Math.PI) * 0.9 : 0;
+    ctx.save();
+    ctx.translate(this.player.x, this.player.y);
+    ctx.rotate(ang + (this.weapon === "shovel" ? swing : 0));
+    if (this.weapon === "shovel") {
+      ctx.strokeStyle = "#6b5e50";
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(6, 8);
+      ctx.lineTo(28, -10);
+      ctx.stroke();
+      ctx.fillStyle = "#d9d3c6";
+      ctx.strokeStyle = "#8d867a";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(22, -18);
+      ctx.lineTo(40, -8);
+      ctx.lineTo(32, 8);
+      ctx.lineTo(16, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#b7b1a4";
+      ctx.fillRect(24, -12, 8, 3);
+    } else if (this.weapon === "laser") {
+      ctx.fillStyle = "#1c2428";
+      ctx.fillRect(8, -3, 28, 6);
+      ctx.fillStyle = "#3ec7c2";
+      ctx.fillRect(34, -2, 8, 4);
+      ctx.fillStyle = "#d4a24a";
+      ctx.fillRect(14, -5, 6, 2);
+    }
+    ctx.restore();
+  },
+  drawAim(this: Game, ctx) {
+    let ang = this.aimAngle();
+    ctx.save();
+    ctx.translate(this.player.x, this.player.y);
+    ctx.rotate(ang);
+    ctx.strokeStyle = "rgba(62,199,194,0.9)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(22, 0);
+    ctx.lineTo(46, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(46, 0);
+    ctx.lineTo(38, -4);
+    ctx.lineTo(38, 4);
+    ctx.closePath();
+    ctx.fillStyle = "#3ec7c2";
     ctx.fill();
     ctx.restore();
   },

@@ -4,6 +4,7 @@ import { initialSnap } from "./snap";
 import { Game } from "../game/Game";
 import { stickOut, phoneTouch, lockLandscape } from "./controls";
 import { musicKnob, Panel, BuildButton, PadButton } from "./widgets";
+import { REPAIR_HINT } from "../content/tuning/build";
 export function SpaceFishApp() {
   let canvasRef = useRef(null);
   let gameRef = useRef(null);
@@ -271,9 +272,9 @@ export function SpaceFishApp() {
                 Spacefish
               </h1>
               <p className="max-w-md text-sm leading-relaxed text-muted">
-                A quiet walk on the rim, then the swarm. Sneak to the laser
-                cache, pull the holdouts out, rebuild the pad, and fly the
-                invasion back to Jupiter.
+                A quiet walk on the rim, then the swarm. Shovel only until the
+                cache. Then the laser, the holdouts, repairs on the pad, and
+                the flight to Jupiter.
               </p>
               <div className="flex flex-wrap gap-2">
                 <button
@@ -302,9 +303,10 @@ export function SpaceFishApp() {
                 </button>
               </div>
               <p className="text-xs leading-relaxed text-muted">
-                WASD moves. Shift sneaks. Space fires. Q throws noise. E uses.
-                Space also steps a scene forward. Esc pauses. On a phone, turn
-                sideways: drag the stick, or tap the ground to walk.
+                WASD moves. Shift sneaks. The rim is shovel only — no gun until
+                the cache. After that, Space or click fires where you aim. Q
+                throws noise. E uses. On a phone, turn sideways. Stick to walk.
+                Hold Fire and tap the ground to aim.
               </p>
               {ready &&
                 musicKnob(music, (e) => {
@@ -419,7 +421,10 @@ export function SpaceFishApp() {
         </div>
       </div>
       {inRun && snap.phase === "base" && (
-        <div className="flex gap-2 overflow-x-auto border-t border-border bg-surface px-3 py-2">
+        <div className="flex items-center gap-2 overflow-x-auto border-t border-border bg-surface px-3 py-2">
+          <p className="shrink-0 font-display text-xs font-bold tracking-widest text-brass">
+            REPAIR
+          </p>
           {["gen", "turret", "lab"].map((e) => (
             <BuildButton
               key={e}
@@ -431,10 +436,12 @@ export function SpaceFishApp() {
           <button
             type="button"
             className="shrink-0 rounded-lg border border-brass px-3 py-2 text-sm font-bold text-brass"
+            title={REPAIR_HINT}
             onClick={() => gameRef.current?.dropBuild()}
           >
-            Place ahead
+            Repair ahead
           </button>
+          <p className="shrink-0 text-xs text-muted">{REPAIR_HINT}</p>
         </div>
       )}
       {snap.mode === "play" && showTouch && (
@@ -514,7 +521,7 @@ export function SpaceFishApp() {
               </PadButton>
             )}
             <PadButton hold onHold={(e) => gameRef.current?.setFire(e)}>
-              Fire
+              {snap.weapon === "Shovel" ? "Dig" : "Fire"}
             </PadButton>
             <PadButton onPress={() => gameRef.current?.pulseUse()}>
               Use

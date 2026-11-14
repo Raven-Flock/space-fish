@@ -8,3 +8,5 @@ export const BUILD_LABEL = {
   turret: "Turret",
   lab: "Lab",
 };
+export const REPAIR_HINT =
+  "Tap a wreck to repair it. Same scrap cost. Nothing new gets placed.";

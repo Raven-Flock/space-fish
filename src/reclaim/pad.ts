@@ -10,6 +10,20 @@ export const padMethods = {
     let e = this.dirVector();
     this.tryPlace(this.player.x + e.x * 78, this.player.y + e.y * 78);
   },
+  nearestWreck(this: Game, x, y, range, kind = null) {
+    let best = null;
+    let bestD = range;
+    for (let n of this.structures) {
+      if (n.repaired) continue;
+      if (kind && n.kind !== kind) continue;
+      let d = hyp(n.x - x, n.y - y);
+      if (d < bestD) {
+        bestD = d;
+        best = n;
+      }
+    }
+    return best;
+  },
   tickNodes(this: Game) {
     if (this.phase === "base") {
       for (let e of this.nodes) {
@@ -24,9 +38,13 @@ export const padMethods = {
     }
   },
   tickStructures(this: Game, dt) {
-    if (this.structures.some((e) => e.kind === "gen")) {
+    if (this.structures.some((e) => e.kind === "gen" && e.repaired)) {
       for (let t of this.structures) {
-        if (t.kind !== "turret" || ((t.cool -= dt), t.cool > 0)) {
+        if (
+          t.kind !== "turret" ||
+          !t.repaired ||
+          ((t.cool -= dt), t.cool > 0)
+        ) {
           continue;
         }
         let n = this.nearestHostile(t.x, t.y, 280);
@@ -68,32 +86,27 @@ export const padMethods = {
     return best;
   },
   tryPlace(this: Game, x, y) {
-    if (this.mode !== "play" || this.phase !== "base" || !this.build) {
+    if (this.mode !== "play" || this.phase !== "base") {
       return;
     }
-    let cost = BUILD_COST[this.build];
-    if (
-      this.scrap < cost ||
-      x < 50 ||
-      y < 50 ||
-      x > this.world.w - 50 ||
-      y > this.world.h - 50 ||
-      hyp(x - this.nest.x, y - this.nest.y) < 120
-    ) {
+    let target = null;
+    if (this.build) {
+      target = this.nearestWreck(x, y, 72, this.build);
+    }
+    if (!target) {
+      target = this.nearestWreck(x, y, 72);
+    }
+    if (!target) {
       return;
     }
-    for (let n of this.structures) {
-      if (hyp(n.x - x, n.y - y) < 78) {
-        return;
-      }
+    let cost = BUILD_COST[target.kind];
+    if (this.scrap < cost) {
+      this.audio.blip();
+      return;
     }
     this.scrap -= cost;
-    this.structures.push({
-      kind: this.build,
-      x: x,
-      y: y,
-      cool: 0,
-    });
+    target.repaired = true;
+    target.cool = 0;
     this.audio.pickup();
     let first = !this.sawFirstBuild;
     this.sawFirstBuild = true;
@@ -102,9 +115,13 @@ export const padMethods = {
     }
   },
   launchReady(this: Game) {
-    let gens = this.structures.filter((e) => e.kind === "gen").length;
-    let turrets = this.structures.filter((e) => e.kind === "turret").length;
-    let labs = this.structures.filter((e) => e.kind === "lab").length;
+    let gens = this.structures.filter((e) => e.kind === "gen" && e.repaired)
+      .length;
+    let turrets = this.structures.filter(
+      (e) => e.kind === "turret" && e.repaired,
+    ).length;
+    let labs = this.structures.filter((e) => e.kind === "lab" && e.repaired)
+      .length;
     return gens >= 1 && turrets >= 2 && labs >= 1 && this.nest.hp <= 0;
   },
 };

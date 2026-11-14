@@ -6,7 +6,29 @@ export function installControlsTest(g: Game): void {
     getYaw: () => g.getYaw(),
     getSpeed: () => g.getSpeed(),
     getX: () => g.getX(),
+    getTime: () => g.time,
+    getMode: () => g.mode,
     setKeys: (e) => g.setQaKeys(e),
+    getWeapon: () => g.weapon,
+    bulletCount: () => g.bullets.length,
+    setTouchAim: (x, y) => {
+      g.aimPointer = "touch";
+      g.aimOk = true;
+      g.aimX = x;
+      g.aimY = y;
+    },
+    pulseShot: () => {
+      g.shotPulse = true;
+    },
+    bullet: () => {
+      let b = g.bullets[g.bullets.length - 1];
+      return b ? { vx: b.vx, vy: b.vy } : null;
+    },
+    wrecks: () =>
+      g.structures.map((s) => ({
+        kind: s.kind,
+        repaired: !!s.repaired,
+      })),
   };
 }
 
