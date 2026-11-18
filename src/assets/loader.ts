@@ -4,7 +4,8 @@ export const loaderMethods = {
     let e = (e) => {
       let t = new Image();
       t.crossOrigin = "anonymous";
-      t.src = e;
+      // F-05: queued (fetched after the intro plates); live set src here at boot
+      this.queueArt(t, e) || (t.src = e);
       return t;
     };
     let t = (t, n) =>
@@ -27,7 +28,7 @@ export const loaderMethods = {
   loadRim(this: Game) {
     let e = (e) => {
       let t = new Image();
-      t.src = e;
+      this.queueArt(t, e) || (t.src = e);
       return t;
     };
     this.rim = {

@@ -24,6 +24,10 @@ export function installControlsTest(g: Game): void {
       let b = g.bullets[g.bullets.length - 1];
       return b ? { vx: b.vx, vy: b.vy } : null;
     },
+    // F-05: timestamped intro load/beat log (ms, performance.now): menu-art, prefetch,
+    // title-art, music-intro, start, plate-request, plate-retry, plate-decoded / plateFailed,
+    // beat-hold, beat-start, art-ch1, ch1-complete, art-rest, rim-start
+    beatLog: () => (g.intro?.log ?? []).map((e) => ({ ...e })),
     wrecks: () =>
       g.structures.map((s) => ({
         kind: s.kind,

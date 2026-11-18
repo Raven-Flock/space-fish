@@ -142,6 +142,8 @@ export const arcadeMethods = {
         ),
       );
     if (ch.kits) this.scheduleKits();
+    this.releaseArt(); // F-05: a chapter start never waits on the intro plates
+    if (phase === "stealth") this.logBeat("rim-start"); // F-05 (WP 1): vs ch1-complete
     this.writeSave(phase);
     this.audio.setMood(CHAPTER_MOOD[phase] ?? "rim");
     this.push(0, true);

@@ -21,6 +21,7 @@ import { transitMethods } from "../waves/transit";
 import { padMethods } from "../reclaim/pad";
 import { cutsceneMethods } from "../cutscenes/cutscene";
 import { cineMethods } from "../cutscenes/cine";
+import { introLoadMethods } from "../cutscenes/introLoad";
 import { loaderMethods } from "../assets/loader";
 import { drawMethods } from "../render/draw";
 import { groundMethods } from "../render/ground";
@@ -140,6 +141,8 @@ export class Game {
   cut = [];
   beat = 0;
   beatT = 0;
+  /** F-05 intro load order + plate gate state (cutscenes/introLoad.ts); null until the loader queues art */
+  intro = null;
   canvas = null;
   ctx = null;
   raf = 0;
@@ -223,6 +226,12 @@ export class Game {
     this.shake = Math.max(0, this.shake - dt * 1.8);
     this.stepParticles(dt);
     if (this.mode === "cutscene") {
+      if (this.holdBeat()) {
+        // F-05: this beat's plate hasn't decoded yet: its timer and VO wait (never auto-advance over the placeholder)
+        this.push(dt);
+        return;
+      }
+      this.startHeldBeat();
       this.beatT += dt;
       let t = this.cut[this.beat];
       if (t && this.beatT >= t.dur) {
@@ -230,6 +239,9 @@ export class Game {
       }
       this.push(dt);
       return;
+    }
+    if (this.mode === "menu") {
+      this.introPrefetch();
     }
     if (this.mode !== "play") {
       this.shotPulse = false;
@@ -320,6 +332,7 @@ export class Game {
       drone: this.shipKit.drone,
       speedKit: this.shipKit.speed,
       powered: counts.gens > 0,
+      ...(this.introSnap() || {}),
     });
   }
   counts() {
@@ -365,6 +378,7 @@ type Methods = typeof arcadeMethods &
   typeof padMethods &
   typeof cutsceneMethods &
   typeof cineMethods &
+  typeof introLoadMethods &
   typeof loaderMethods &
   typeof drawMethods &
   typeof groundMethods &
@@ -392,6 +406,7 @@ installMethods(
   padMethods,
   cutsceneMethods,
   cineMethods,
+  introLoadMethods,
   loaderMethods,
   drawMethods,
   groundMethods,

@@ -11,6 +11,7 @@ export const cutsceneMethods = {
     if (id === "intro") {
       // F-07: decode the intro lines now, one after another in beat order (SD-07/-17)
       this.audio.preloadVo(this.cut.map((b) => b.voice).filter(Boolean));
+      this.introStart();
       this.playCine();
     }
   },
