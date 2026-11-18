@@ -64,6 +64,8 @@ describe("constant tables equal live 1c9c028", () => {
       const env = installEnv({ seed: 1, storage: { "spacefish-music": "0.4" } });
       try {
         const a = new A();
+        // v0.3.1: priming the shovel SFX at unlock is intended (INTENDED.audioMethods); live has no shovel files
+        for (const m of INTENDED.audioMethods) if (typeof a[m] === "function") a[m] = () => {};
         const intent: string[] = [];
         if (typeof a.crossfadeTo === "function") {
           const cf = a.crossfadeTo.bind(a);

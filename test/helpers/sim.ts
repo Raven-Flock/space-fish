@@ -11,7 +11,7 @@ const SKIP = new Set(["raf", "audio", "onSnap", "canvas", "ctx", "unbind", "art"
 /**
  * Intended differences from live 1c9c028 (this PR: touch-aim fix N-1, D-11 shovel melee
  * on Use and on Rim Fire/Dig; v0.3: F-01 Rim chase 140 + search state, N-5 click-repair
- * reach, N-8 facing lock cone).
+ * reach, N-8 facing lock cone; v0.3.1: shovel SFX primed at audio unlock).
  * Parity runs our Game with exactly these entry points stubbed (liveEquivalent), and
  * the new state they own is dropped from the trace only while it holds its inert
  * default, so any leak of the new behaviour into a parity run still shows as a diff.
@@ -28,6 +28,8 @@ export const INTENDED = {
   liveValues: { rimChaseSpeed: 160 } as Record<string, unknown>,
   state: { swing: null, swingCd: 0, hitStop: 0, transitHint: null } as Record<string, unknown>,
   fishKeys: ["stagger", "staggerImmune", "search", "searchLock", "searchPending"],
+  /** AudioDirector entry points stubbed on the parity Game's own director (v0.3.1: live has no shovel files to prime) */
+  audioMethods: ["primeSfx"],
   /**
    * F-07 (iOS audio on Web Audio gain, Sound SD-01). Music and VO moved from HTMLAudio
    * (.volume, which iOS ignores) to decoded buffers on GainNode buses, so their
@@ -64,6 +66,10 @@ export function liveEquivalent<T extends new (...a: any[]) => any>(G: T): T {
       super(...a);
       // F-07: live's Music default (an intended difference, see INTENDED.audio)
       if (localStorage.getItem(MUSIC_KEY) == null) (this as any).audio.musicVol = INTENDED.audio.liveMusicDefault;
+      for (const m of INTENDED.audioMethods) {
+        if (typeof (this as any).audio[m] !== "function") throw new Error(`intended audio method missing: ${m}`);
+        (this as any).audio[m] = () => {};
+      }
     }
   }
   for (const m of INTENDED.methods) {

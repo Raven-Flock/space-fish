@@ -16,7 +16,7 @@ import { random } from "../engine/rng";
 //
 //   music tracks -> music bus -> duck -------+
 //   synth SFX -> synth trim -> sfx bus -------+-> master (mute) -> limiter -> destination
-//   (file SFX ------------->  sfx bus)        |
+//   (file SFX -> cue trim ->  sfx bus)        |   shovel: sfx bus 1.0 x shovel cue trim 0.53
 //   VO lines     -> vo bus ------------------+
 //   UI cues      -> ui bus ------------------+
 //
@@ -240,6 +240,7 @@ export class AudioDirector {
       if (!this.held && !this.hidden) {
         try { ac.resume()?.catch?.(() => {}); } catch {}
       }
+      this.primeSfx();
     }
     if (!this.mood) {
       this.setMood("rim");
@@ -545,16 +546,28 @@ export class AudioDirector {
   }
 
   /**
+   * PR #10 v0.3.1 (QA): decode the six shovel cues at audio unlock (Start/Continue/Retry),
+   * not on the first swing. Nothing loads before unlock, so menus load nothing new;
+   * loadSfx() caches, so a second unlock (Retry) fetches nothing again.
+   */
+  primeSfx() {
+    for (const u of [...SHOVEL_SFX.swing, ...SHOVEL_SFX.tonk]) this.loadSfx(u);
+  }
+
+  /**
    * D-11 shovel cues: Sound Design's files as decoded buffers on the SFX bus.
    * Round-robin a/b/c (never the same twice in a row), +/-3% detune via the source's
-   * playbackRate (pitch follows), gain 1.0 into the SFX bus. Plays only once audio is
-   * unlocked, like tone(); the first cue starts decoding all six, so menus load nothing.
+   * playbackRate (pitch follows). Each cue gets its own gain node at the shovel cue trim
+   * (SHOVEL_CUE_TRIM 0.53, Sound's v0.3.1 level correction) into the SFX bus, which stays
+   * at 1.0: sfx bus 1.0 x shovel cue trim 0.53. The trim is per cue, never the whole bus
+   * (the synth beeps keep their own 0.22) and never the Music slider. Plays only once
+   * audio is unlocked, like tone(); unlock() primes all six.
    */
   playSfx(kind: "swing" | "tonk") {
     if (!this.ctx) {
       return;
     }
-    if (!this.sfxBufs.size) for (const u of [...SHOVEL_SFX.swing, ...SHOVEL_SFX.tonk]) this.loadSfx(u);
+    this.primeSfx();
     const list = SHOVEL_SFX[kind];
     const i = this.sfxNext[kind];
     this.sfxNext[kind] = (i + 1) % list.length;
@@ -563,7 +576,7 @@ export class AudioDirector {
       const ac = this.ctx;
       if (!d || !ac || !this.bus) return;
       const g = ac.createGain();
-      g.gain.value = SHOVEL_SFX.gain;
+      g.gain.value = SHOVEL_SFX.gain; // shovel cue trim 0.53, per cue
       const src = ac.createBufferSource();
       src.buffer = d.buffer;
       src.playbackRate.value = rate;
