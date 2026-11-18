@@ -3,7 +3,7 @@
 // synth-SFX call log, music/VO intent, HUD snapshots and storage.
 import { createHash } from "node:crypto";
 import { installEnv, type Env, type EnvOptions } from "./fakeEnv";
-import { MUSIC_KEY } from "../../src/save/keys";
+import { LEVEL_CURVE, LEVEL_CURVE_KEY, MUSIC_KEY } from "../../src/save/keys";
 
 // "raf" is the rAF handle id: live's music fade also drew rAF ids, F-07 fades on the audio clock (SD-12).
 const SKIP = new Set(["raf", "audio", "onSnap", "canvas", "ctx", "unbind", "art", "rim", "cine", "cineVid", "voiceEl", "keys", "qaKeys"]);
@@ -11,7 +11,7 @@ const SKIP = new Set(["raf", "audio", "onSnap", "canvas", "ctx", "unbind", "art"
 /**
  * Intended differences from live 1c9c028 (this PR: touch-aim fix N-1, D-11 shovel melee
  * on Use and on Rim Fire/Dig; v0.3: F-01 Rim chase 140 + search state, N-5 click-repair
- * reach, N-8 facing lock cone).
+ * reach, N-8 facing lock cone; v0.3.1: shovel SFX primed at audio unlock).
  * Parity runs our Game with exactly these entry points stubbed (liveEquivalent), and
  * the new state they own is dropped from the trace only while it holds its inert
  * default, so any leak of the new behaviour into a parity run still shows as a diff.
@@ -28,6 +28,8 @@ export const INTENDED = {
   liveValues: { rimChaseSpeed: 160 } as Record<string, unknown>,
   state: { swing: null, swingCd: 0, hitStop: 0, transitHint: null } as Record<string, unknown>,
   fishKeys: ["stagger", "staggerImmune", "search", "searchLock", "searchPending"],
+  /** AudioDirector entry points stubbed on the parity Game's own director (v0.3.1: live has no shovel files to prime) */
+  audioMethods: ["primeSfx"],
   /**
    * F-07 (iOS audio on Web Audio gain, Sound SD-01). Music and VO moved from HTMLAudio
    * (.volume, which iOS ignores) to decoded buffers on GainNode buses, so their
@@ -44,8 +46,23 @@ export const INTENDED = {
     sfxLine: /^(osc\.|freq\.|gain\.set\(|gain\.ramp\()/,
     liveMusicDefault: 0.7,
     api: ["suspend", "resume", "setMuted", "loadVo", "preloadVo", "playVo", "stopVo", "dropVo", "crossfadeTo"],
+    /** F-07 v0.2.1: the one-time level-curve flag (live has no such key) */
+    storageKeys: [LEVEL_CURVE_KEY],
   },
 };
+
+/**
+ * The synth-SFX calls of an audio log. F-07 v0.2.1 anchors every level ramp with
+ * setValueAtTime(current, now) right after cancelScheduledValues(now); that `set` is bus
+ * automation, not a tone() cue, so it is dropped (tone() never cancels).
+ */
+export function synthLines(lines: string[]) {
+  return lines.filter((l, i) => INTENDED.audio.sfxLine.test(l) && !(/^gain\.set\(/.test(l) && /^gain\.cancel\(/.test(lines[i - 1] ?? "")));
+}
+/** Storage without the intended new keys (live never writes them). */
+export function liveStorage(store: Map<string, string>) {
+  return Object.fromEntries([...store].filter(([k]) => !INTENDED.audio.storageKeys.includes(k)));
+}
 
 /** music/VO intent from live's HTMLAudio play() lines */
 function liveIntent(lines: string[]) {
@@ -66,10 +83,16 @@ Object.assign(INTENDED.state, { pauseFrom: "play", resumeLockUntil: 0, padStart:
 /** Our Game with only the intended new entry points turned off: must equal live 1c9c028. */
 export function liveEquivalent<T extends new (...a: any[]) => any>(G: T): T {
   class LiveEquivalent extends G {
+    /** runSim: saved levels count as already migrated (live reads them linearly; F-07 v0.2.1) */
+    static liveLevels = true;
     constructor(...a: any[]) {
       super(...a);
       // F-07: live's Music default (an intended difference, see INTENDED.audio)
       if (localStorage.getItem(MUSIC_KEY) == null) (this as any).audio.musicVol = INTENDED.audio.liveMusicDefault;
+      for (const m of INTENDED.audioMethods) {
+        if (typeof (this as any).audio[m] !== "function") throw new Error(`intended audio method missing: ${m}`);
+        (this as any).audio[m] = () => {};
+      }
     }
   }
   for (const m of INTENDED.methods) {
@@ -103,6 +126,9 @@ export interface SimOptions extends EnvOptions {
 
 export function runSim(GameClass: any, o: SimOptions) {
   const env = installEnv(o);
+  // F-07 v0.2.1: our director moves saved levels to the v*v curve once; a parity run
+  // starts with that done, so it reads a saved level exactly as live does.
+  if (GameClass.liveLevels) env.store.set(LEVEL_CURVE_KEY, LEVEL_CURVE);
   try {
     const snaps: any[] = [];
     const g = new GameClass((s: any) => snaps.push(s));
@@ -115,7 +141,7 @@ export function runSim(GameClass: any, o: SimOptions) {
       g.audio.crossfadeTo = (n: string) => { intent.push(`music:${n}`); cf(n); };
       g.audio.playVo = (n: string) => { intent.push(`vo:${n}`); vo(n); };
     }
-    const sfx = () => env.audio.lines!.filter((l) => INTENDED.audio.sfxLine.test(l));
+    const sfx = () => synthLines(env.audio.lines!);
     g.attach(env.canvas);
     g.startLoop();
     o.start?.(g, env);
@@ -139,7 +165,7 @@ export function runSim(GameClass: any, o: SimOptions) {
     const final = { f, s: pickState(g), draw: env.draw.digest(), audio: digest };
     g.detach();
     const audioIntent = ours ? intent : liveIntent(env.audio.lines!);
-    return { trace, final, transitions, snaps, audioLog: sfxLog, audioIntent, rawAudio: env.audio.lines, storage: Object.fromEntries(env.store), simSeconds: env.now / 1000 };
+    return { trace, final, transitions, snaps, audioLog: sfxLog, audioIntent, rawAudio: env.audio.lines, storage: liveStorage(env.store), simSeconds: env.now / 1000 };
   } finally {
     env.restore();
   }
