@@ -16,6 +16,7 @@ const STATIC = [
   "opening",
   "rim",
   "sprites",
+  "sfx",
 ];
 
 for (const p of STATIC) {

@@ -68,6 +68,8 @@ export class Game {
   swing = null;
   swingCd = 0;
   hitStop = 0;
+  /** VP Transit touch hint: { t, fire, done } once Transit has run this run, else null */
+  transitHint = null;
   alert = 0;
   alerted = false;
   lastSeen = {

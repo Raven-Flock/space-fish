@@ -1,5 +1,5 @@
 import type { Game } from "../game/Game";
-import { BUILD_COST } from "../content/tuning/build";
+import { BUILD_COST, CLICK_REPAIR } from "../content/tuning/build";
 import { hyp } from "../engine/math";
 export const padMethods = {
   selectBuild(this: Game, kind) {
@@ -30,6 +30,25 @@ export const padMethods = {
       }
     }
     return best;
+  },
+  /**
+   * QA N-5 (GD, Nov 18): a click or tap within 72 px of a wreck used to repair it from any
+   * distance. Now it repairs only if (the player is within CLICK_REPAIR.reach of that
+   * wreck AND the press lands on it, within wreckHitRadius + tapSlop of its centre) OR a
+   * repair kind is selected (1/2/3 or the build buttons). Returns true when the press is
+   * refused as a repair, so it fires, aims or walks like a press anywhere else.
+   */
+  clickRepairRefused(this: Game, x, y) {
+    if (this.build) {
+      return false;
+    }
+    let w = this.nearestWreck(x, y, 72);
+    if (!w) {
+      return false;
+    }
+    let inReach = hyp(w.x - this.player.x, w.y - this.player.y) <= CLICK_REPAIR.reach;
+    let onWreck = hyp(w.x - x, w.y - y) <= CLICK_REPAIR.wreckHitRadius + CLICK_REPAIR.tapSlop;
+    return !(inReach && onWreck);
   },
   tickNodes(this: Game) {
     if (this.phase === "base") {

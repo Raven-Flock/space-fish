@@ -426,37 +426,9 @@ describe("D-11 shovel melee on Use (§U.9)", () => {
   });
 });
 
-describe("F-01 counterplay and a full clear with the fixes on", () => {
-  // Spotted on the Rim with one fish 60-64 px behind; stop, land one swing as it closes, then
-  // walk away east for 10 s (open ground, covers removed, stays clear of the east wall).
-  function chase(start: number, swing: boolean) {
-    const g = boot("stealth");
-    place(g, 250 + start * 20, 945, 1);
-    const f = g.makeFish(g.player.x - 60 - start, g.player.y, []);
-    g.fish.push(f);
-    g.alert = 3.4; g.alerted = true; g.lastSeen = { x: g.player.x, y: g.player.y };
-    const hp0 = g.player.hp;
-    let swung = false;
-    for (let i = 0; i < 60 * 10; i++) {
-      const d = Math.hypot(f.x - g.player.x, f.y - g.player.y);
-      if (!swung && swing && d < 50) { g.setStick(0, 0, false); g.dir = 1; g.pulseUse(); swung = true; }
-      else if (!swung && swing) g.setStick(0, 0, false); // wait for it
-      else g.setStick(1, 0, true); // flee east
-      if (!swing && i === 0) g.setStick(1, 0, true);
-      g.tick(DT);
-      if (g.player.hp < hp0) return false;
-    }
-    return true;
-  }
-  it("a spotted player who lands one hit escapes a single chasing fish (5/5 here; QA bar ≥4/5)", () => {
-    let ok = 0;
-    for (let i = 0; i < 5; i++) if (chase(i, true)) ok++;
-    expect(ok).toBeGreaterThanOrEqual(4);
-    // control: fleeing without the hit, the same fish (160 px/s vs the 156 walk) catches you
-    let caught = 0;
-    for (let i = 0; i < 5; i++) if (!chase(i, false)) caught++;
-    expect(caught).toBe(5);
-  });
+// F-01 escape and counterplay tests moved to live-fixes-v03.test.ts (GD's Nov 18 ruling:
+// Rim chase 140 + search state; the old "no-hit control is always caught" bar was retired).
+describe("full clear with the fixes on", () => {
   it("full run start to victory with the real Game (zero upgrades)", () => {
     const ap = makeAutopilot();
     const r = runSim(Game, {

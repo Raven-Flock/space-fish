@@ -7,16 +7,24 @@ const SKIP = new Set(["audio", "onSnap", "canvas", "ctx", "unbind", "art", "rim"
 
 /**
  * Intended differences from live 1c9c028 (this PR: touch-aim fix N-1, D-11 shovel melee
- * on Use and on Rim Fire/Dig).
+ * on Use and on Rim Fire/Dig; v0.3: F-01 Rim chase 140 + search state, N-5 click-repair
+ * reach, N-8 facing lock cone).
  * Parity runs our Game with exactly these entry points stubbed (liveEquivalent), and
  * the new state they own is dropped from the trace only while it holds its inert
  * default, so any leak of the new behaviour into a parity run still shows as a diff.
+ * A stub returns false (= the live path) unless `liveValues` gives the live number.
  */
 export const INTENDED = {
-  methods: ["clearTouchAim", "shovelFire", "tickShovel", "tryShovel"],
-  helpers: ["drawShovelTrail", "shovelNoise", "useInteractableNear"],
-  state: { swing: null, swingCd: 0, hitStop: 0 } as Record<string, unknown>,
-  fishKeys: ["stagger", "staggerImmune"],
+  methods: [
+    "clearTouchAim", "shovelFire", "tickShovel", "tryShovel",
+    "rimChaseSpeed", "fishSearch", "clickRepairRefused", "facingAimLock",
+    "tickTransitHint", "resetRunHints",
+  ],
+  helpers: ["drawShovelTrail", "shovelNoise", "useInteractableNear", "aimFromPointer", "lockTarget"],
+  /** live 1c9c028 values returned by the stubs (the bundle hardcodes chaseSpeed:160) */
+  liveValues: { rimChaseSpeed: 160 } as Record<string, unknown>,
+  state: { swing: null, swingCd: 0, hitStop: 0, transitHint: null } as Record<string, unknown>,
+  fishKeys: ["stagger", "staggerImmune", "search", "searchLock", "searchPending"],
 };
 
 /** Our Game with only the intended new entry points turned off: must equal live 1c9c028. */
@@ -24,7 +32,8 @@ export function liveEquivalent<T extends new (...a: any[]) => any>(G: T): T {
   class LiveEquivalent extends G {}
   for (const m of INTENDED.methods) {
     if (typeof (G.prototype as any)[m] !== "function") throw new Error(`intended method missing: ${m}`);
-    (LiveEquivalent.prototype as any)[m] = function () { return false; };
+    const v = m in INTENDED.liveValues ? INTENDED.liveValues[m] : false;
+    (LiveEquivalent.prototype as any)[m] = function () { return v; };
   }
   return LiveEquivalent;
 }

@@ -1,4 +1,6 @@
 import { MUSIC_KEY } from "../save/keys";
+import { SHOVEL_SFX } from "../content/tuning/sfx";
+import { random } from "../engine/rng";
 export class AudioDirector {
   ctx = null;
   master = null;
@@ -7,6 +9,10 @@ export class AudioDirector {
   current = null;
   fadeToken = 0;
   loops = null;
+  /** shovel SFX elements, created on the first cue (not in unlock(), so menus load nothing new) */
+  sfx = null;
+  /** next round-robin index per cue */
+  sfxNext = { swing: 0, tonk: 0 };
   constructor() {
     try {
       let e = localStorage.getItem(MUSIC_KEY);
@@ -143,12 +149,43 @@ export class AudioDirector {
   alarm() {
     this.tone(466, 0.16, "square", 0.04);
   }
-  // D-11 shovel cues. Placeholders reuse existing tones until SD delivers the
-  // whoosh and metal "tonk" (-2 LU mix rule).
+  /**
+   * D-11 shovel cues: Sound Design's files on the current file-playback path
+   * (HTMLAudio, like music and voice; the Web Audio move is F-07, a separate PR).
+   * Round-robin a/b/c, so a variant never plays twice in a row; +/-3% detune via
+   * playbackRate (pitch follows). Plays only once audio is unlocked, like tone().
+   * Reduced motion doesn't change audio.
+   */
+  playSfx(kind) {
+    if (!this.ctx) {
+      return;
+    }
+    if (!this.sfx) {
+      let make = (src) => {
+        let a = new Audio(src);
+        a.preload = "auto";
+        return a;
+      };
+      this.sfx = {
+        swing: SHOVEL_SFX.swing.map(make),
+        tonk: SHOVEL_SFX.tonk.map(make),
+      };
+    }
+    let list = this.sfx[kind];
+    let i = this.sfxNext[kind];
+    this.sfxNext[kind] = (i + 1) % list.length;
+    let a = list[i];
+    a.currentTime = 0;
+    a.volume = SHOVEL_SFX.gain;
+    a.preservesPitch = false;
+    a.webkitPreservesPitch = false;
+    a.playbackRate = 1 + (random() * 2 - 1) * SHOVEL_SFX.detune;
+    a.play()?.catch?.(() => {});
+  }
   swing() {
-    this.shoot(false);
+    this.playSfx("swing");
   }
   tonk() {
-    this.blip();
+    this.playSfx("tonk");
   }
 }

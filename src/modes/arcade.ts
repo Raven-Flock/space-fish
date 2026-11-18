@@ -12,6 +12,7 @@ import { readLaunchPhase } from "../debug/launchParams";
 export const arcadeMethods = {
   startNew(this: Game) {
     this.audio.unlock();
+    this.resetRunHints();
     // QA launch flags from live: ?phase=<name> jumps to a chapter, ?qa=1 skips the intro.
     const jump = readLaunchPhase(window.location.search);
     if (jump) {

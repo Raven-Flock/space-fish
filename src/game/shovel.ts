@@ -1,5 +1,6 @@
 import type { Game } from "./Game";
 import { SHOVEL } from "../content/tuning/shovel";
+import { FISH } from "../content/tuning/fish";
 import { clamp, hyp } from "../engine/math";
 
 // D-11 shovel melee on Use (ADDENDUM §U.9). On foot only: Rim, Holdouts, Pad.
@@ -42,13 +43,24 @@ export const shovelMethods = {
     this.tryShovel();
     return true;
   },
-  /** Advance the swing, the hit window, and fish stagger timers. */
+  /** Advance the swing, the hit window, and fish stagger / search timers. */
   tickShovel(this: Game, dt) {
     this.swingCd = Math.max(0, this.swingCd - dt);
     for (let n of this.fish) {
+      // F-01 search (GD ruling): timers count down in sim time
+      if (n.searchLock > 0) n.searchLock = Math.max(0, n.searchLock - dt);
+      if (n.search > 0) n.search = n.search - dt > 1e-9 ? n.search - dt : 0;
       if (n.stagger > 0) {
         n.stagger = n.stagger - dt > 1e-9 ? n.stagger - dt : 0;
-        if (n.stagger === 0) n.staggerImmune = SHOVEL.staggerImmune;
+        if (n.stagger === 0) {
+          n.staggerImmune = SHOVEL.staggerImmune;
+          // the hit broke the chase: search starts when the stagger ends
+          if (n.searchPending) {
+            n.searchPending = false;
+            n.search = FISH.searchTime;
+            n.searchLock = FISH.searchLockout;
+          }
+        }
       } else if (n.staggerImmune > 0) {
         n.staggerImmune = Math.max(0, n.staggerImmune - dt);
       }
@@ -81,7 +93,13 @@ export const shovelMethods = {
       let uy = d > 0.001 ? dy / d : Math.sin(s.ang);
       n.x = clamp(n.x + ux * SHOVEL.knockback, 0, this.world.w);
       n.y = clamp(n.y + uy * SHOVEL.knockback, 0, this.world.h);
-      if (!(n.stagger > 0) && !(n.staggerImmune > 0)) n.stagger = SHOVEL.stagger;
+      if (!(n.stagger > 0) && !(n.staggerImmune > 0)) {
+        n.stagger = SHOVEL.stagger;
+        // F-01 (Rim only): this stagger leads into search, unless the fish entered
+        // search less than FISH.searchLockout s ago (anti-lock) or is searching now.
+        // Damage, knockback and the stagger above apply either way.
+        if (this.phase === "stealth" && !(n.searchLock > 0) && !(n.search > 0)) n.searchPending = true;
+      }
       this.burst(n.x, n.y, SHOVEL.trailColor);
       n.hp <= 0 && this.audio.hit();
     }

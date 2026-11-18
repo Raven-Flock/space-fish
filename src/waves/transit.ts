@@ -1,6 +1,7 @@
 import type { Game } from "../game/Game";
 import { hyp } from "../engine/math";
 import { TRANSIT, TRANSIT_KITS } from "../content/arcade/transit";
+import { HUD_TIMING } from "../content/tuning/hud";
 
 // Ch4 Transit: scroll east, spawn fish on a cadence, Jupiter cut at a distance,
 // then the Eye. Live 69cf5be ends Transit by distance (scroll), not by a clock on
@@ -11,8 +12,35 @@ export const transitMethods = {
       ...k,
     }));
   },
+  /**
+   * VP-PHONE-HUD-v0.1: the Transit touch hint hides once Fire has been held
+   * HUD_TIMING.transitHintFireHeld s in total during Transit, or after
+   * HUD_TIMING.transitHintMaxTime s of Transit play, whichever comes first. Play time
+   * only (pause and cutscenes don't count). Once hidden it stays hidden for the run.
+   */
+  tickTransitHint(this: Game, dt) {
+    let h = this.transitHint ?? (this.transitHint = { t: 0, fire: 0, done: false });
+    if (h.done) {
+      return;
+    }
+    h.t += dt;
+    if (this.fireLatch || this.held().has("Space")) {
+      h.fire += dt;
+    }
+    if (
+      h.fire >= HUD_TIMING.transitHintFireHeld - 1e-9 ||
+      h.t >= HUD_TIMING.transitHintMaxTime - 1e-9
+    ) {
+      h.done = true;
+    }
+  },
+  /** A new run (Start) shows the Transit hint again; Retry and Continue don't. */
+  resetRunHints(this: Game) {
+    this.transitHint = null;
+  },
   /** One fixed step of Transit. `wish` is the input vector, `speed` the ship speed. */
   tickShooter(this: Game, dt, wish, speed) {
+    this.tickTransitHint(dt);
     if (!this.bossOn && !this.jupiterPlayed) {
       this.scroll += TRANSIT.scrollSpeed * dt;
     }

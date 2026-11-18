@@ -48,7 +48,8 @@ export const inputMethods = {
       if (
         this.mode === "play" &&
         this.phase === "base" &&
-        this.nearestWreck(t.x, t.y, 72)
+        this.nearestWreck(t.x, t.y, 72) &&
+        !this.clickRepairRefused(t.x, t.y)
       ) {
         this.tryPlace(t.x, t.y);
         return;
@@ -204,6 +205,22 @@ export const inputMethods = {
     }
     let e = this.dirVector();
     return Math.atan2(e.y, e.x);
+  },
+  /** True when aimAngle() comes from a mouse or touch aim point (same tests as aimAngle). */
+  aimFromPointer(this: Game) {
+    if (this.qaKeys != null || !this.aimOk) {
+      return false;
+    }
+    let p =
+      this.aimPointer === "touch"
+        ? { x: this.aimX, y: this.aimY }
+        : this.eventToWorld({ clientX: this.aimClientX, clientY: this.aimClientY });
+    if (!p) {
+      return false;
+    }
+    let dx = p.x - this.player.x;
+    let dy = p.y - this.player.y;
+    return dx * dx + dy * dy > 36;
   },
   // A touch aim is a world point picked while Fire is held. It is only valid
   // until Fire is released, the stick moves, or a chapter (re)starts; after that

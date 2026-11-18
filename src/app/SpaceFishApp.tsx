@@ -5,6 +5,8 @@ import { Game } from "../game/Game";
 import { stickOut, phoneTouch, lockLandscape } from "./controls";
 import { musicKnob, Panel, BuildButton, PadButton } from "./widgets";
 import { REPAIR_HINT } from "../content/tuning/build";
+import { HUD_HINT, TITLE_HELP } from "../content/hud";
+import { HUD_TIMING } from "../content/tuning/hud";
 export function SpaceFishApp() {
   let canvasRef = useRef(null);
   let gameRef = useRef(null);
@@ -24,6 +26,14 @@ export function SpaceFishApp() {
     h: 0,
   });
   let [music, setMusicUi] = useState(0.7);
+  // VP-PHONE-HUD-v0.1 (VP-08): the touch walk hint hides after the first stick move of 0.4 s or longer
+  let [walkHintDone, setWalkHintDone] = useState(false);
+  let walkHintTimer = useRef(null);
+  let stopWalkHintTimer = () => {
+    clearTimeout(walkHintTimer.current);
+    walkHintTimer.current = null;
+  };
+  useEffect(() => () => clearTimeout(walkHintTimer.current), []);
   useEffect(() => {
     let e = () => {
       let t = window.matchMedia?.("(pointer: coarse)").matches;
@@ -40,6 +50,7 @@ export function SpaceFishApp() {
       });
     };
     let z = () => {
+      stopWalkHintTimer();
       stickPointer.current = null;
       setKnob({
         x: 0,
@@ -123,12 +134,23 @@ export function SpaceFishApp() {
       y: s.vy,
     });
     gameRef.current?.setStick(s.x, s.y, true);
+    if (s.x !== 0 || s.y !== 0) {
+      if (!walkHintTimer.current) {
+        walkHintTimer.current = setTimeout(
+          () => setWalkHintDone(true),
+          HUD_TIMING.walkHintHideAfter * 1000,
+        );
+      }
+    } else {
+      stopWalkHintTimer();
+    }
   };
   let releaseStick = (e) => {
     if (stickPointer.current !== e.pointerId) {
       return;
     }
     stickPointer.current = null;
+    stopWalkHintTimer();
     setKnob({
       x: 0,
       y: 0,
@@ -136,6 +158,8 @@ export function SpaceFishApp() {
     gameRef.current?.setStick(0, 0);
   };
   let showTouch = touchUi && (!portrait || forced);
+  // VP Transit hint: hidden (faded) once the game says so; re-read on every HUD snap
+  let transitHintDone = !!gameRef.current?.transitHint?.done;
   return (
     <main
       className="relative flex h-dvh flex-col bg-bg text-fg"
@@ -189,9 +213,21 @@ export function SpaceFishApp() {
                   }
                 </div>
                 <p className="mt-2 text-sm leading-snug">{snap.objective}</p>
-                {showTouch && (
+                {showTouch && snap.phase !== "shooter" && !walkHintDone && (
                   <p className="mt-1 text-xs text-muted">
-                    Stick or tap the ground to walk.
+                    {HUD_HINT.touchWalk}
+                  </p>
+                )}
+                {showTouch && snap.phase === "shooter" && (
+                  <p
+                    className="mt-1 text-xs text-muted"
+                    style={{
+                      opacity: transitHintDone ? 0 : 1,
+                      transition: `opacity ${HUD_TIMING.hintFadeMs}ms`,
+                    }}
+                    aria-hidden={transitHintDone ? true : undefined}
+                  >
+                    {HUD_HINT.touchTransit}
                   </p>
                 )}
               </div>
@@ -303,11 +339,7 @@ export function SpaceFishApp() {
                 </button>
               </div>
               <p className="text-xs leading-relaxed text-muted">
-                WASD moves. Shift sneaks. The rim is shovel only — no gun until
-                the cache. After that, Space or click fires where you aim. Q
-                throws noise. E: use, or swing the shovel. Space steps a scene
-                forward. Esc pauses. On a phone, turn sideways. Stick to walk.
-                Hold Fire and tap the ground to aim.
+                {`${TITLE_HELP.base} ${touchUi ? TITLE_HELP.aimTouch : TITLE_HELP.aimDesktop}`}
               </p>
               {ready &&
                 musicKnob(music, (e) => {
@@ -524,9 +556,11 @@ export function SpaceFishApp() {
             <PadButton hold onHold={(e) => gameRef.current?.setFire(e)}>
               {snap.weapon === "Shovel" ? "Dig" : "Fire"}
             </PadButton>
-            <PadButton onPress={() => gameRef.current?.pulseUse()}>
-              Use
-            </PadButton>
+            {snap.phase !== "shooter" && (
+              <PadButton onPress={() => gameRef.current?.pulseUse()}>
+                Use
+              </PadButton>
+            )}
           </div>
         </div>
       )}
