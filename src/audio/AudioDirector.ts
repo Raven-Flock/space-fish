@@ -1,4 +1,4 @@
-import { MUSIC_KEY, MUTE_KEY } from "../save/keys";
+import { LEVEL_CURVE, LEVEL_CURVE_KEY, LEVEL_KEYS, MUSIC_KEY, MUTE_KEY } from "../save/keys";
 import {
   AUDIO,
   MOOD_ALIAS,
@@ -16,7 +16,7 @@ import { random } from "../engine/rng";
 //
 //   music tracks -> music bus -> duck -------+
 //   synth SFX -> synth trim -> sfx bus -------+-> master (mute) -> limiter -> destination
-//   (file SFX ------------->  sfx bus)        |
+//   (file SFX -> cue trim ->  sfx bus)        |   shovel: sfx bus 1.0 x shovel cue trim 0.48
 //   VO lines     -> vo bus ------------------+
 //   UI cues      -> ui bus ------------------+
 //
@@ -47,6 +47,29 @@ export function fadeCurve(from: number, to: number, n = AUDIO.curvePoints) {
   for (let i = 0; i < n; i++) c[i] = fadeValue(from, to, i / (n - 1));
   c[n - 1] = to;
   return c;
+}
+
+/**
+ * One-time move of saved bus levels to the v*v curve: v_new = sqrt(v_old), so a saved
+ * linear 0.7 becomes 0.837 and still plays at gain 0.7 (Sound, after QA-PR11-v0.1).
+ * Runs once: the version flag is written even when nothing was saved, so a level saved
+ * later (already on the new curve) is never migrated. Values are clamped to 0..1.
+ * Returns true when it ran.
+ */
+export function migrateSavedLevels(store: Pick<Storage, "getItem" | "setItem"> = localStorage) {
+  try {
+    if (store.getItem(LEVEL_CURVE_KEY) === LEVEL_CURVE) return false;
+    for (const k of LEVEL_KEYS) {
+      const raw = store.getItem(k);
+      if (raw == null) continue;
+      const v = Math.max(0, Math.min(1, parseFloat(raw) || 0));
+      store.setItem(k, String(Math.sqrt(v)));
+    }
+    store.setItem(LEVEL_CURVE_KEY, LEVEL_CURVE);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const GESTURES = ["pointerdown", "touchend", "keydown"];
@@ -86,6 +109,7 @@ export class AudioDirector {
   private voBufs = new Map<string, Promise<any>>();
 
   constructor() {
+    migrateSavedLevels();
     try {
       let e = localStorage.getItem(MUSIC_KEY);
       if (e != null) {
@@ -277,6 +301,7 @@ export class AudioDirector {
       if (!this.held && !this.hidden) {
         try { ac.resume()?.catch?.(() => {}); } catch {}
       }
+      this.primeSfx();
     }
     if (!this.mood) {
       this.setMood("rim");
@@ -304,12 +329,17 @@ export class AudioDirector {
     this.voBufs.clear();
   }
 
-  /** Level change: setTargetAtTime (never .value while playing); 0 lands on exactly 0. */
+  /**
+   * Level change: setTargetAtTime (never .value while playing); 0 lands on exactly 0.
+   * The current value is anchored first (QA-PR11-v0.1): older WebKit can jump when a
+   * ramp still in progress is cancelled, which clicks on a fast slider drag.
+   */
   private ramp(param: any, g: number, tau = AUDIO.levelTau) {
     const ac = this.ac;
     if (!ac || !param) return;
     const t = ac.currentTime;
     param.cancelScheduledValues(t);
+    param.setValueAtTime(param.value, t);
     param.setTargetAtTime(g, t, tau);
     if (g === 0) param.setValueAtTime(0, t + tau * 5);
   }
@@ -582,25 +612,41 @@ export class AudioDirector {
   }
 
   /**
+   * PR #10 v0.3.1 (QA): decode the six shovel cues at audio unlock (Start/Continue/Retry),
+   * not on the first swing. Nothing loads before unlock, so menus load nothing new;
+   * loadSfx() caches, so a second unlock (Retry) fetches nothing again.
+   */
+  primeSfx() {
+    for (const u of [...SHOVEL_SFX.swing, ...SHOVEL_SFX.tonk]) this.loadSfx(u);
+  }
+
+  /**
    * D-11 shovel cues: Sound Design's files as decoded buffers on the SFX bus.
    * Round-robin a/b/c (never the same twice in a row), +/-3% detune via the source's
-   * playbackRate (pitch follows), gain 1.0 into the SFX bus. Plays only once audio is
-   * unlocked, like tone(); the first cue starts decoding all six, so menus load nothing.
+   * playbackRate (pitch follows). Each cue gets its own gain node at the shovel cue trim
+   * (SHOVEL_CUE_TRIM 0.48, Sound's update for F-07's curve) into the SFX bus, which stays
+   * at 1.0: sfx bus 1.0 x shovel cue trim 0.48. The trim is per cue, never the whole bus
+   * (the synth beeps keep their own 0.22) and never the Music slider. Plays only once
+   * audio is unlocked, like tone(); unlock() primes all six. A cue whose buffer is ready
+   * more than SHOVEL_SFX.lateSkipMs after it was asked for is dropped (a late whoosh
+   * reads as a bug, and it could land after its own tonk).
    */
   playSfx(kind: "swing" | "tonk") {
     if (!this.ctx) {
       return;
     }
-    if (!this.sfxBufs.size) for (const u of [...SHOVEL_SFX.swing, ...SHOVEL_SFX.tonk]) this.loadSfx(u);
+    this.primeSfx();
     const list = SHOVEL_SFX[kind];
     const i = this.sfxNext[kind];
     this.sfxNext[kind] = (i + 1) % list.length;
     const rate = 1 + (random() * 2 - 1) * SHOVEL_SFX.detune;
+    const asked = performance.now();
     this.loadSfx(list[i]).then((d) => {
       const ac = this.ctx;
       if (!d || !ac || !this.bus) return;
+      if (performance.now() - asked > SHOVEL_SFX.lateSkipMs) return;
       const g = ac.createGain();
-      g.gain.value = SHOVEL_SFX.gain;
+      g.gain.value = SHOVEL_SFX.gain; // shovel cue trim 0.48, per cue
       const src = ac.createBufferSource();
       src.buffer = d.buffer;
       src.playbackRate.value = rate;

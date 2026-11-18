@@ -147,6 +147,7 @@ export function installEnv(opts: EnvOptions = {}) {
     constructor(public src = "") { audio.add(`new Audio(${src})`); }
     get volume() { return this._vol; }
     set volume(v: number) { this._vol = v; }
+    load() { audio.add(`load(${this.src})`); }
     play() { this.paused = false; audio.add(`play(${this.src})`); return Promise.resolve(); }
     pause() { this.paused = true; audio.add(`pause(${this.src})`); }
   }

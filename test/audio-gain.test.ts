@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AudioDirector, fadeCurve, fadeValue, levelToGain } from "../src/audio/AudioDirector";
+import { AudioDirector, fadeCurve, fadeValue, levelToGain, migrateSavedLevels } from "../src/audio/AudioDirector";
 import { loopPoints, parseGapless } from "../src/audio/gapless";
 import { AUDIO } from "../src/content/tuning/audio";
 import { Game } from "../src/game/Game";
@@ -246,18 +246,20 @@ describe("graph, unlock and re-arm (mocked AudioContext)", () => {
     expect(mb.session.type).toBe("ambient");
   });
 
-  it("Music slider and mute ramp with setTargetAtTime (tau 0.03), never .value after build; both persist", () => {
+  it("Music slider and mute ramp with setTargetAtTime (tau 0.03), anchored at the current value first, never .value after build; both persist", () => {
     mb = mockBrowser();
     const a = new AudioDirector();
     const music = a.bus!.music.id;
     const master = a.master.id;
     const n = mb.log.length;
+    const cur = a.bus!.music.gain.value; // 0.8 * 0.8 at build
     a.setMusic(0.5);
-    expect(mb.log.slice(n)).toEqual([`${music}.cancel(1)`, `${music}.target(0.25,1,0.03)`]);
+    // QA-PR11-v0.1: cancel, then setValueAtTime(param.value, now), then the ramp (no click on older WebKit)
+    expect(mb.log.slice(n)).toEqual([`${music}.cancel(1)`, `${music}.set(${cur},1)`, `${music}.target(0.25,1,0.03)`]);
     expect(mb.store.get("spacefish-music")).toBe("0.5");
     const m = mb.log.length;
     a.setMuted(true);
-    expect(mb.log.slice(m)).toEqual([`${master}.cancel(1)`, `${master}.target(0,1,0.03)`, `${master}.set(0,1.15)`]);
+    expect(mb.log.slice(m)).toEqual([`${master}.cancel(1)`, `${master}.set(1,1)`, `${master}.target(0,1,0.03)`, `${master}.set(0,1.15)`]);
     expect(mb.store.get("spacefish-muted")).toBe("1");
     a.setMusic(0);
     expect(mb.log.slice(-1)[0]).toBe(`${music}.set(0,1.15)`); // 0 lands on exactly 0
@@ -271,7 +273,8 @@ describe("graph, unlock and re-arm (mocked AudioContext)", () => {
     const a = new AudioDirector();
     expect(a.muted).toBe(true);
     expect(a.master.gain.value).toBe(0);
-    expect(a.bus!.music.gain.value).toBe(0.25);
+    // a pre-F-07 (linear) 0.5 is migrated once to sqrt(0.5), so it still plays at gain 0.5
+    expect(a.bus!.music.gain.value).toBeCloseTo(0.5, 12);
   });
 
   it("no AudioContext (or a broken one): every call is a safe no-op", () => {
@@ -279,6 +282,54 @@ describe("graph, unlock and re-arm (mocked AudioContext)", () => {
     (globalThis as any).window.AudioContext = undefined;
     const a = new AudioDirector();
     expect(() => { a.unlock(); a.setMood("alert"); a.setMusic(0.3); a.setMuted(true); a.suspend(); a.resume(); a.playVo("open"); a.stopVo(); a.shoot(true); a.close(); }).not.toThrow();
+  });
+});
+
+describe("saved level migration to the v*v curve (F-07 v0.2.1, Sound after QA-PR11-v0.1)", () => {
+  const mem = (init: Record<string, string> = {}) => {
+    const m = new Map(Object.entries(init));
+    return { m, getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, String(v)); } };
+  };
+  it("migrates once on first load: a saved 0.7 becomes sqrt(0.7) = 0.837 and still plays at gain 0.7; the flag is written", () => {
+    mb = mockBrowser({ storage: { "spacefish-music": "0.7" } });
+    const a = new AudioDirector();
+    expect(mb.store.get("spacefish-music")).toBe(String(Math.sqrt(0.7)));
+    expect(+mb.store.get("spacefish-music")!).toBeCloseTo(0.837, 3);
+    expect(mb.store.get("spacefish-level-curve")).toBe("v2");
+    expect(a.musicVol).toBeCloseTo(0.8367, 4);
+    expect(a.bus!.music.gain.value).toBeCloseTo(0.7, 12);
+  });
+  it("is idempotent: a second load or a second call changes nothing", () => {
+    mb = mockBrowser({ storage: { "spacefish-music": "0.7" } });
+    new AudioDirector();
+    const once = mb.store.get("spacefish-music");
+    new AudioDirector();
+    expect(mb.store.get("spacefish-music")).toBe(once);
+    expect(migrateSavedLevels(localStorage)).toBe(false);
+    expect(mb.store.get("spacefish-music")).toBe(once);
+    const s = mem({ "spacefish-music": "0.25" });
+    expect(migrateSavedLevels(s)).toBe(true);
+    expect(migrateSavedLevels(s)).toBe(false);
+    expect(s.m.get("spacefish-music")).toBe("0.5");
+  });
+  it("no saved value is a no-op for levels (only the flag is written), so a level saved later is never migrated", () => {
+    mb = mockBrowser();
+    const a = new AudioDirector();
+    expect(mb.store.has("spacefish-music")).toBe(false);
+    expect(mb.store.get("spacefish-level-curve")).toBe("v2");
+    expect(a.musicVol).toBe(AUDIO.defaults.music);
+    a.setMusic(0.6);
+    const b = new AudioDirector();
+    expect(mb.store.get("spacefish-music")).toBe("0.6");
+    expect(b.musicVol).toBe(0.6);
+  });
+  it("clamps to 0..1 (and junk reads as 0, as the loader already does)", () => {
+    for (const [raw, want] of [["1.7", "1"], ["-0.3", "0"], ["abc", "0"], ["0", "0"], ["1", "1"], ["0.36", "0.6"]]) {
+      const s = mem({ "spacefish-music": raw });
+      migrateSavedLevels(s);
+      expect(s.m.get("spacefish-music"), raw).toBe(want);
+      expect(s.m.get("spacefish-level-curve")).toBe("v2");
+    }
   });
 });
 
