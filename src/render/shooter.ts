@@ -1,4 +1,5 @@
 import type { Game } from "../game/Game";
+import { bleedOf } from "../engine/view";
 export const shooterMethods = {
   drawShooter(this: Game) {
     let ctx = this.ctx;
@@ -103,13 +104,17 @@ export const shooterMethods = {
     ctx.restore();
   },
   paintFlight(this: Game, e) {
+    // F-04: paint the whole extend-width stage (VP-10); b = 0 draws exactly as before
+    let b = bleedOf(this.view);
+    let W = 960 + 2 * b;
     e.fillStyle = "#05070c";
-    e.fillRect(0, 0, 960, 540);
+    e.fillRect(0 - b, 0, W, 540);
     let t = this.rim.jupiter;
     let n = -((this.scroll * 0.03) % 80);
+    // Jupiter keeps its authored scale (VP v0.1.2 §5); the stars below cover the bleed
     e.drawImage(t, n - 220, -16, 1320, 572);
     for (let t = 0; t < 36; t++) {
-      let n = (((t * 97 + this.scroll * 0.35) % 960) + 960) % 960;
+      let n = (((t * 97 + this.scroll * 0.35) % W) + W) % W - b;
       let r = (t * 53) % 220;
       e.fillStyle = "rgba(232,239,233,0.75)";
       e.fillRect(n, r, t % 6 === 0 ? 2 : 1, 1);
@@ -118,10 +123,12 @@ export const shooterMethods = {
   paintSky(this: Game) {
     let ctx = this.ctx;
     if (ctx) {
+      let b = bleedOf(this.view);
+      let W = 960 + 2 * b;
       ctx.fillStyle = "#0c1218";
-      ctx.fillRect(0, 0, 960, 540);
+      ctx.fillRect(0 - b, 0, W, 540);
       for (let t = 0; t < 48; t++) {
-        let n = (((t * 137 + this.camX * 0.2) % 960) + 960) % 960;
+        let n = (((t * 137 + this.camX * 0.2) % W) + W) % W - b;
         let r = (t * 89) % 540;
         ctx.fillStyle = "rgba(232,239,233,0.75)";
         ctx.fillRect(n, r, t % 5 == 0 ? 2 : 1, t % 5 == 0 ? 2 : 1);

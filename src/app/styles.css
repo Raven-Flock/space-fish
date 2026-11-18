@@ -1530,3 +1530,385 @@ body {
   touch-action: none;
   background: #0c1218;
 }
+
+/* ---- F-04 phone HUD (VP-PHONE-HUD-v0.1 §2 + the v0.1.2 rulings; VP.md VP-01, VP-08..VP-11;
+   palette hudLimits). Plain CSS on purpose: this sheet is a pre-built Tailwind file, so new
+   utility classes would not exist. Unlayered, so these win over the layered utilities.
+   Numbers mirror src/content/tuning/hud.ts. ---- */
+.sf-safe {
+  --sf-il: env(safe-area-inset-left, 0px);
+  --sf-it: env(safe-area-inset-top, 0px);
+  --sf-ir: env(safe-area-inset-right, 0px);
+  --sf-ib: env(safe-area-inset-bottom, 0px);
+  --sf-l: max(12px, var(--sf-il));
+  --sf-t: max(calc(var(--sf-lb, 0px) + 12px), var(--sf-it));
+  --sf-r: max(12px, var(--sf-ir));
+  --sf-b: max(calc(var(--sf-lb, 0px) + 12px), var(--sf-ib));
+}
+/* forced landscape: <main> is rotated 90deg, so its left edge is the device's top, etc. */
+.sf-safe.sf-forced {
+  --sf-il: env(safe-area-inset-top, 0px);
+  --sf-it: env(safe-area-inset-right, 0px);
+  --sf-ir: env(safe-area-inset-bottom, 0px);
+  --sf-ib: env(safe-area-inset-left, 0px);
+}
+/* one top strip, <= 36 px; the chips stay 8 px clear of the Pause hit box (40 px from the edge) */
+.sf-strip {
+  position: absolute;
+  top: var(--sf-t);
+  left: var(--sf-l);
+  right: calc(var(--sf-r) + 48px);
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  align-self: flex-start;
+}
+/* chips (VP v0.1.2 §5): 24 tall, radius 8, 12 px side padding, rgba(12,18,24,0.72), 12 px Sora 400 #E8EFE9 */
+.sf-chip {
+  box-sizing: border-box;
+  flex: none;
+  height: 24px;
+  margin: 0;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: rgba(12, 18, 24, 0.72);
+  color: #e8efe9;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sf-hp {
+  max-width: 168px;
+}
+.sf-hp[data-phase="rescue"] {
+  max-width: 216px;
+}
+.sf-hp[data-phase="base"] {
+  max-width: 160px;
+}
+.sf-hp[data-phase="shooter"] {
+  max-width: 200px;
+}
+.sf-tag {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+/* HP bar 96x6, radius 3, track #E8EFE9 a0.18, fill #E8EFE9 -> #E25B4A under 30%, 120 ms width ease */
+.sf-hpbar {
+  flex: none;
+  width: 96px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(232, 239, 233, 0.18);
+  overflow: hidden;
+}
+.sf-hpfill {
+  display: block;
+  height: 100%;
+  background: #e8efe9;
+  transition: width 120ms ease-out;
+}
+.sf-hpfill.sf-low {
+  background: #e25b4a;
+}
+.sf-alert {
+  color: #e25b4a;
+  font-weight: 600;
+}
+.sf-obj {
+  display: block;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 204px;
+  text-overflow: ellipsis;
+}
+.sf-base,
+.sf-kits {
+  margin-left: auto;
+}
+.sf-base {
+  max-width: 248px;
+}
+.sf-kits {
+  max-width: 160px;
+  text-overflow: ellipsis;
+}
+/* G/T/L letters stand in for the gen/turret/lab glyphs (VP v0.1.2 §5: Oxanium 12) */
+.sf-ico {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  color: #8ea0a6;
+  margin-right: -4px;
+}
+/* boss block (VP v0.1.2 §5): top-centre, 40% wide; "THE EYE" Oxanium 11 px caps 0.08em
+   #E8EFE9 a0.85, a 4 px gap, then an 8 px bar: #E05CFF fill on #E8EFE9 a0.18; about 26 tall.
+   The white chip drains over 400 ms behind the fill. */
+.sf-boss {
+  position: absolute;
+  top: var(--sf-t);
+  left: 30%;
+  width: 40%;
+  height: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none;
+}
+.sf-boss-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(232, 239, 233, 0.85);
+}
+.sf-boss-track {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  background: rgba(232, 239, 233, 0.18);
+  overflow: hidden;
+}
+.sf-boss-chip,
+.sf-boss-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+.sf-boss-chip {
+  background: #ffffff;
+  transition: width 400ms ease-out;
+}
+.sf-boss-fill {
+  background: #e05cff;
+}
+/* F-02's Pause (VP v0.1.2 §2): a transparent 44x44 hit box; the 36x36 plate (radius 10)
+   sits at its top, inside the 36 px strip, with max(12px, inset) to the top and right
+   edges, so the box reaches 4 px past the plate on each side and hangs 8 px below */
+.sf-pause-slot {
+  position: absolute;
+  top: var(--sf-t);
+  right: calc(var(--sf-r) - 4px);
+  width: 44px;
+  height: 44px;
+  pointer-events: none;
+}
+.sf-pause-slot > * {
+  pointer-events: auto;
+}
+.sf-pause {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  touch-action: none;
+}
+.sf-pause-plate {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(12, 18, 24, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+/* one hint line at a time: 12 px Sora 400, #E8EFE9 a0.85 on the scrim, radius 8, 300 ms fade-out */
+.sf-hint {
+  position: absolute;
+  left: var(--sf-l);
+  top: calc(var(--sf-t) + 44px);
+  box-sizing: border-box;
+  max-width: calc(100% - var(--sf-l) - var(--sf-r) - 48px);
+  margin: 0;
+  padding: 4px 12px; /* the chips' 12 px side padding (VP v0.1.2 §5) */
+  border-radius: 8px;
+  background: rgba(12, 18, 24, 0.72);
+  color: rgba(232, 239, 233, 0.85);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 300ms ease-out;
+}
+.sf-hint.sf-on {
+  opacity: 1;
+  transition-duration: 200ms;
+}
+.sf-hint:empty {
+  display: none;
+}
+/* cutscene caption + Skip row: max(12px, inset) on its edges */
+.sf-cutrow {
+  margin: 12px var(--sf-r) var(--sf-b) var(--sf-l);
+}
+@media (min-width: 40rem) {
+  .sf-cutrow {
+    margin: 16px max(16px, var(--sf-ir)) max(16px, var(--sf-ib)) max(16px, var(--sf-il));
+  }
+}
+/* touch controls: floating stick bottom-left, Fire 72 bottom-right, 44 px targets 8 px apart */
+.sf-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sf-stick {
+  position: absolute;
+  left: var(--sf-l);
+  bottom: var(--sf-b);
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  pointer-events: auto;
+  touch-action: none;
+}
+.sf-stick-ring {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border-radius: 999px;
+  border: 2px solid rgba(232, 239, 233, 0.4);
+  background: rgba(12, 18, 24, 0.55);
+  opacity: 0.35;
+  pointer-events: none;
+}
+.sf-stick-ring.sf-active {
+  opacity: 0.55; /* held (VP v0.1.2 §5) */
+}
+.sf-stick-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  background: rgba(232, 239, 233, 0.6);
+  pointer-events: none;
+}
+/* right stack (VP v0.1.2 §5): Fire (--sf-fire: 72, or 64 below 2:1) in the corner, one label
+   line (14 px) above the bottom safe edge; Use 56 up and to the left with a 12 px gap; the
+   Rim's Sneak/Noise (44) above Fire, a label line + 8 px apart. Labels: 12 px Sora a0.7 under
+   each button, removed after its first 3 uses. */
+.sf-buttons {
+  position: absolute;
+  right: var(--sf-r);
+  bottom: calc(var(--sf-b) + 14px);
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.sf-btn {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+.sf-btn > button {
+  display: block;
+  pointer-events: auto;
+}
+.sf-btn-use {
+  right: calc(var(--sf-fire) + 12px);
+  bottom: calc(var(--sf-fire) + 12px);
+}
+.sf-btn-sneak {
+  bottom: calc(var(--sf-fire) + 22px);
+}
+.sf-btn-noise {
+  bottom: calc(var(--sf-fire) + 88px);
+}
+.sf-btn-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 14px;
+  white-space: nowrap;
+  color: rgba(232, 239, 233, 0.7);
+  pointer-events: none;
+}
+/* Pad build tray: overlay, slides in over 200 ms ease-out only while building */
+/* at most 96 px plus the bottom safe area (VP v0.1.2 §3) */
+.sf-tray {
+  position: absolute;
+  bottom: var(--sf-lb, 0px);
+  max-height: calc(96px + var(--sf-ib));
+  left: var(--sf-l);
+  right: var(--sf-r);
+  z-index: 20;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 8px max(8px, var(--sf-ib));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  transform: translateY(100%);
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    transform 200ms ease-out,
+    visibility 0s linear 200ms;
+}
+.sf-tray.sf-open {
+  transform: none;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    transform 200ms ease-out,
+    visibility 0s;
+}
+/* flipped to just under the top strip when the player or the target wreck would sit under it */
+.sf-tray.sf-tray-top {
+  top: calc(var(--sf-t) + 36px);
+  bottom: auto;
+  padding-bottom: 8px;
+  border-top: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.sf-tray.sf-tray-touch {
+  left: calc(var(--sf-l) + 128px);
+  right: calc(var(--sf-r) + 80px);
+}
+.sf-tray button {
+  flex: none;
+  min-height: 44px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sf-hint,
+  .sf-tray,
+  .sf-hpfill,
+  .sf-boss-chip {
+    transition: none !important;
+  }
+}

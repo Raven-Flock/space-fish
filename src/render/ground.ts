@@ -1,5 +1,7 @@
 import type { Game } from "../game/Game";
 import { SHOVEL } from "../content/tuning/shovel";
+import { bleedOf } from "../engine/view";
+import { drawBleedImage } from "./bleed";
 export const groundMethods = {
   drawGround(this: Game) {
     let ctx = this.ctx;
@@ -222,8 +224,9 @@ export const groundMethods = {
     }
     this.drawArrow();
     if (this.invuln > 0) {
+      let b = bleedOf(this.view);
       ctx.fillStyle = "rgba(226,91,74,0.18)";
-      ctx.fillRect(0, 0, 960, 540);
+      ctx.fillRect(0 - b, 0, 960 + 2 * b, 540);
     }
   },
   drawBulkheads(this: Game, ctx) {
@@ -285,25 +288,27 @@ export const groundMethods = {
   },
   drawRimAtmosphere(this: Game, ctx) {
     let t = this.rim?.horizon;
+    // F-04: screen-space layers paint the full stage width (VP-10)
+    let b = bleedOf(this.view);
     if (this.imgOk(t)) {
       ctx.save();
       let n = -((this.camX * 0.15) % 220);
-      ctx.drawImage(
+      // F-04 (VP v0.1.2 §5): the horizon band is mirror-extended into the bleed (<= 5% stretch)
+      drawBleedImage(
+        ctx,
         t,
-        0,
-        Math.floor(t.naturalHeight * 0.12),
-        t.naturalWidth,
-        Math.floor(t.naturalHeight * 0.46),
+        [0, Math.floor(t.naturalHeight * 0.12), t.naturalWidth, Math.floor(t.naturalHeight * 0.46)],
         n - 40,
         0,
         1120,
         108,
+        b,
       );
       let r = ctx.createLinearGradient(0, 36, 0, 112);
       r.addColorStop(0, "rgba(8,10,14,0)");
       r.addColorStop(1, "rgba(8,10,14,0.97)");
       ctx.fillStyle = r;
-      ctx.fillRect(0, 0, 960, 116);
+      ctx.fillRect(0 - b, 0, 960 + 2 * b, 116);
       ctx.restore();
     }
     ctx.save();
@@ -311,7 +316,7 @@ export const groundMethods = {
     n.addColorStop(0, "rgba(0,0,0,0)");
     n.addColorStop(1, "rgba(0,0,0,0.42)");
     ctx.fillStyle = n;
-    ctx.fillRect(0, 0, 960, 540);
+    ctx.fillRect(0 - b, 0, 960 + 2 * b, 540);
     ctx.restore();
   },
   drawCone(this: Game, fish) {

@@ -54,29 +54,47 @@ export function PadButton({
   onPress: t,
   hold: n,
   onHold: r,
+  size: z,
+  hud: h,
+  className: c,
+  label: l,
+  onUse: u,
 }: {
   children?: any;
   onPress?: () => void;
   hold?: boolean;
   onHold?: (down: boolean) => void;
+  /** F-04: fixed square size (44 targets, 56 Use, 72/64 Fire; a CSS length is allowed); omit for the old 64 px min-height */
+  size?: number | string;
+  /** F-04: data-hud name, so QA's footprint sum finds the control */
+  hud?: string;
+  /** F-04: extra class (right-stack position) */
+  className?: string;
+  /** F-04 (VP v0.1.2 §5): a 12 px label under the button; "" hides it */
+  label?: string;
+  /** F-04: counts a use (press) of the button, for the label rule */
+  onUse?: () => void;
 }) {
-  return (
+  let btn = (
     <button
       type="button"
       className="font-display font-bold"
+      data-hud={h}
       style={{
-        minHeight: 64,
+        ...(z
+          ? { width: z, height: z, padding: 0, fontSize: typeof z === "number" && z < 56 ? 12 : 16 }
+          : { minHeight: 64, fontSize: 16 }),
         borderRadius: 14,
         border: "1px solid rgba(232,239,233,0.28)",
         background: "rgba(18,26,34,0.92)",
         color: "#e8efe9",
-        fontSize: 16,
         touchAction: "none",
         userSelect: "none",
       }}
       onPointerDown={(e) => {
         e.preventDefault();
         e.currentTarget.setPointerCapture(e.pointerId);
+        u?.();
         if (n) {
           r?.(true);
         }
@@ -96,5 +114,19 @@ export function PadButton({
     >
       {e}
     </button>
+  );
+  if (!c) {
+    return btn;
+  }
+  // F-04 right stack: the wrapper is positioned; the label sits under the button
+  return (
+    <span className={`sf-btn ${c}`}>
+      {btn}
+      {l ? (
+        <span className="sf-btn-label" aria-hidden="true">
+          {l}
+        </span>
+      ) : null}
+    </span>
   );
 }
