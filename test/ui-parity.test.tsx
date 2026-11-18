@@ -106,7 +106,7 @@ async function session(App: any, coarse = false) {
   return out;
 }
 
-// Intended copy changes in this PR (QA N-7 + the D-11 shovel hint), applied to live's
+// Intended copy changes (QA N-7, the D-11 shovel hint, F-07 Music default), applied to live's
 // output before comparing. Each must be used, so a stale exception fails the suite.
 const COPY: Array<[string, string]> = [
   [
@@ -114,6 +114,11 @@ const COPY: Array<[string, string]> = [
     "Q throws noise. E: use, or swing the shovel. Space steps a scene forward. Esc pauses. On a phone,",
   ],
   ["Tap a wreck to repair it. Same scrap cost. Nothing new gets placed.", "Tap a wreck to repair it. Same scrap cost."],
+  // F-07: Sound's Music default 0.8 (gain = v*v, ~0.8 dB under live's linear 0.7)
+  [
+    'aria-label="Music volume" style="width: 9rem; accent-color: rgb(212, 162, 74);" type="range" value="0.7"',
+    'aria-label="Music volume" style="width: 9rem; accent-color: rgb(212, 162, 74);" type="range" value="0.8"',
+  ],
 ];
 function withCopy(s: string, used: Set<number>, coarse = false) {
   COPY.forEach(([from, to], i) => {
@@ -173,7 +178,7 @@ describe("React shell matches live 1c9c028 (plus intended copy changes)", () => 
     expect(b[1]).toBe("qa-hook function menu function");
     expect(b.length).toBe(a.length);
     for (let i = 0; i < a.length; i++) expect(b[i]).toBe(withCopy(a[i], used));
-    expect([...used].sort()).toEqual([0, 1]);
+    expect([...used].sort()).toEqual([0, 1, 2]);
   });
 
   it("phone (coarse pointer) session: same DOM after every step", async () => {
@@ -182,7 +187,7 @@ describe("React shell matches live 1c9c028 (plus intended copy changes)", () => 
     const used = new Set<number>();
     expect(b.length).toBe(a.length);
     for (let i = 0; i < a.length; i++) expect(b[i]).toBe(withCopy(a[i], used, true));
-    expect([...used].sort((x, y) => x - y)).toEqual([0, 1, 10, 11, 12, 13]);
+    expect([...used].sort((x, y) => x - y)).toEqual([0, 1, 2, 10, 11, 12, 13]);
   });
 
   it("no 'walk' anywhere in Transit (desktop and phone), and Use is hidden there on a phone", async () => {

@@ -1,9 +1,12 @@
 // Runs a Game class headless under the fake environment and returns a trace
 // that two builds can be compared on: state samples, draw-call digests,
-// audio call log, HUD snapshots and storage.
+// synth-SFX call log, music/VO intent, HUD snapshots and storage.
+import { createHash } from "node:crypto";
 import { installEnv, type Env, type EnvOptions } from "./fakeEnv";
+import { MUSIC_KEY } from "../../src/save/keys";
 
-const SKIP = new Set(["audio", "onSnap", "canvas", "ctx", "unbind", "art", "rim", "cine", "cineVid", "voiceEl", "keys", "qaKeys"]);
+// "raf" is the rAF handle id: live's music fade also drew rAF ids, F-07 fades on the audio clock (SD-12).
+const SKIP = new Set(["raf", "audio", "onSnap", "canvas", "ctx", "unbind", "art", "rim", "cine", "cineVid", "voiceEl", "keys", "qaKeys"]);
 
 /**
  * Intended differences from live 1c9c028 (this PR: touch-aim fix N-1, D-11 shovel melee
@@ -25,11 +28,44 @@ export const INTENDED = {
   liveValues: { rimChaseSpeed: 160 } as Record<string, unknown>,
   state: { swing: null, swingCd: 0, hitStop: 0, transitHint: null } as Record<string, unknown>,
   fishKeys: ["stagger", "staggerImmune", "search", "searchLock", "searchPending"],
+  /**
+   * F-07 (iOS audio on Web Audio gain, Sound SD-01). Music and VO moved from HTMLAudio
+   * (.volume, which iOS ignores) to decoded buffers on GainNode buses, so their
+   * low-level calls differ from live by design. Parity therefore compares:
+   *   - the synth SFX calls line for line (the tone() recipes are unchanged),
+   *   - the music and VO *intent*: which loop starts and which line plays, in order
+   *     (live: HTMLAudio play() calls; ours: crossfadeTo()/playVo()),
+   *   - mood, music level and storage as before.
+   * The one intended level change visible to parity is the Music default
+   * (0.7 live -> 0.8, Sound's default, which with gain = v*v plays ~0.8 dB under
+   * live's linear 0.7). liveEquivalent puts the live default back.
+   */
+  audio: {
+    sfxLine: /^(osc\.|freq\.|gain\.set\(|gain\.ramp\()/,
+    liveMusicDefault: 0.7,
+    api: ["suspend", "resume", "setMuted", "loadVo", "preloadVo", "playVo", "stopVo", "dropVo", "crossfadeTo"],
+  },
 };
+
+/** music/VO intent from live's HTMLAudio play() lines */
+function liveIntent(lines: string[]) {
+  const out: string[] = [];
+  for (const l of lines) {
+    const m = l.match(/^play\((music|opening)\/([\w-]+)\.mp3\)$/);
+    if (m) out.push(`${m[1] === "music" ? "music" : "vo"}:${m[2]}`);
+  }
+  return out;
+}
 
 /** Our Game with only the intended new entry points turned off: must equal live 1c9c028. */
 export function liveEquivalent<T extends new (...a: any[]) => any>(G: T): T {
-  class LiveEquivalent extends G {}
+  class LiveEquivalent extends G {
+    constructor(...a: any[]) {
+      super(...a);
+      // F-07: live's Music default (an intended difference, see INTENDED.audio)
+      if (localStorage.getItem(MUSIC_KEY) == null) (this as any).audio.musicVol = INTENDED.audio.liveMusicDefault;
+    }
+  }
   for (const m of INTENDED.methods) {
     if (typeof (G.prototype as any)[m] !== "function") throw new Error(`intended method missing: ${m}`);
     const v = m in INTENDED.liveValues ? INTENDED.liveValues[m] : false;
@@ -64,6 +100,16 @@ export function runSim(GameClass: any, o: SimOptions) {
   try {
     const snaps: any[] = [];
     const g = new GameClass((s: any) => snaps.push(s));
+    // F-07: record our music/VO intent; live's comes from its HTMLAudio play() lines
+    const intent: string[] = [];
+    const ours = typeof g.audio.crossfadeTo === "function";
+    if (ours) {
+      const cf = g.audio.crossfadeTo.bind(g.audio);
+      const vo = g.audio.playVo.bind(g.audio);
+      g.audio.crossfadeTo = (n: string) => { intent.push(`music:${n}`); cf(n); };
+      g.audio.playVo = (n: string) => { intent.push(`vo:${n}`); vo(n); };
+    }
+    const sfx = () => env.audio.lines!.filter((l) => INTENDED.audio.sfxLine.test(l));
     g.attach(env.canvas);
     g.startLoop();
     o.start?.(g, env);
@@ -79,12 +125,15 @@ export function runSim(GameClass: any, o: SimOptions) {
         transitions.push({ t: +(env.now / 1000).toFixed(2), k });
         last = k;
       }
-      if (f % (o.sampleEvery ?? 30) === 0) trace.push({ f, s: pickState(g), draw: env.draw.digest(), audio: env.audio.count });
+      if (f % (o.sampleEvery ?? 30) === 0) trace.push({ f, s: pickState(g), draw: env.draw.digest(), audio: sfx().length });
       if (o.stopWhen?.(g)) break;
     }
-    const final = { f, s: pickState(g), draw: env.draw.digest(), audio: env.audio.digest() };
+    const sfxLog = sfx();
+    const digest = `${sfxLog.length}:${createHash("sha256").update(sfxLog.join("\n")).digest("hex").slice(0, 16)}`;
+    const final = { f, s: pickState(g), draw: env.draw.digest(), audio: digest };
     g.detach();
-    return { trace, final, transitions, snaps, audioLog: env.audio.lines, storage: Object.fromEntries(env.store), simSeconds: env.now / 1000 };
+    const audioIntent = ours ? intent : liveIntent(env.audio.lines!);
+    return { trace, final, transitions, snaps, audioLog: sfxLog, audioIntent, rawAudio: env.audio.lines, storage: Object.fromEntries(env.store), simSeconds: env.now / 1000 };
   } finally {
     env.restore();
   }

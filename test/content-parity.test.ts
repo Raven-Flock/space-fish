@@ -57,11 +57,18 @@ describe("constant tables equal live 1c9c028", () => {
       expect(stickOut(a[0] / 10, a[1] / 10, Math.abs(a[2]) / 10)).toEqual(live.stickOut(a[0] / 10, a[1] / 10, Math.abs(a[2]) / 10));
     }
   });
-  it("audio cues: same oscillator calls, music loops and crossfades", () => {
+  it("audio cues: same oscillator calls, same music loop per mood, same stored level", () => {
+    // F-07: music moved from HTMLAudio to Web Audio buffers (INTENDED.audio), so the music
+    // half compares *which loop each mood starts*, not the HTMLAudio calls.
     const run = (A: any) => {
       const env = installEnv({ seed: 1, storage: { "spacefish-music": "0.4" } });
       try {
         const a = new A();
+        const intent: string[] = [];
+        if (typeof a.crossfadeTo === "function") {
+          const cf = a.crossfadeTo.bind(a);
+          a.crossfadeTo = (n: string) => { intent.push(`music:${n}`); cf(n); };
+        }
         a.unlock();
         for (const m of ["stealth", "alert", "rescue", "base", "shooter", "swarm", "ending", "menu"]) {
           a.setMood(m);
@@ -70,12 +77,17 @@ describe("constant tables equal live 1c9c028", () => {
         a.shoot(true); a.shoot(false); a.hit(); a.blip(); a.pickup(); a.alarm();
         a.setMusic(0.9);
         a.close();
-        return { log: env.audio.lines, storage: Object.fromEntries(env.store), vol: a.musicVol };
+        const lines = env.audio.lines!;
+        const music = intent.length ? intent : lines.filter((l) => /^play\(music\//.test(l)).map((l) => `music:${l.slice(11, -5)}`);
+        return { sfx: lines.filter((l) => INTENDED.audio.sfxLine.test(l)), music, storage: Object.fromEntries(env.store), vol: a.musicVol };
       } finally {
         env.restore();
       }
     };
-    expect(run(AudioDirector)).toEqual(run(live.AudioDirector));
+    const ours = run(AudioDirector);
+    expect(ours).toEqual(run(live.AudioDirector));
+    expect(ours.sfx.length).toBe(42); // 7 tones x 6 calls each
+    expect(ours.music).toEqual(["music:rim", "music:swarm", "music:holdouts", "music:base", "music:transit", "music:swarm", "music:ending", "music:rim"]);
   });
 });
 

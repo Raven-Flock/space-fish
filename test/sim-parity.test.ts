@@ -1,9 +1,11 @@
 // Parity: the source must behave exactly like the bundle live serves (main 1c9c028),
-// except for this PR's intended differences (touch-aim fix N-1 and the D-11 shovel).
+// except for the intended differences (touch-aim fix N-1, the D-11 shovel, and F-07:
+// music/VO on Web Audio gain, compared as SFX calls + music/VO intent, see INTENDED.audio).
 // Those are switched off by liveEquivalent(Game), which stubs exactly the entry
 // points listed in helpers/sim.ts INTENDED; everything else must match frame for
 // frame. The fixed behaviour itself is asserted in live-fixes.test.ts.
-// Same seed, same inputs, same clock -> same state, same draw calls, same audio calls.
+// Same seed, same inputs, same clock -> same state, same draw calls, same SFX calls,
+// same music/VO intent.
 import { beforeAll, describe, expect, it } from "vitest";
 import { Game } from "../src/game/Game";
 import { loadLive } from "./helpers/liveOracle";
@@ -25,6 +27,7 @@ function compare(a: ReturnType<typeof runSim>, b: ReturnType<typeof runSim>) {
   expect(b.final).toEqual(a.final);
   expect(b.snaps).toEqual(a.snaps);
   expect(b.audioLog).toEqual(a.audioLog);
+  expect(b.audioIntent).toEqual(a.audioIntent);
   expect(b.storage).toEqual(a.storage);
   // the intended new per-fish state never appears in a parity run
   for (const t of b.trace) for (const f of t.s.fish ?? []) for (const k of INTENDED.fishKeys) expect(f).not.toHaveProperty(k);

@@ -7,6 +7,7 @@ import { musicKnob, Panel, BuildButton, PadButton } from "./widgets";
 import { REPAIR_HINT } from "../content/tuning/build";
 import { HUD_HINT, TITLE_HELP } from "../content/hud";
 import { HUD_TIMING } from "../content/tuning/hud";
+import { AUDIO } from "../content/tuning/audio";
 export function SpaceFishApp() {
   let canvasRef = useRef(null);
   let gameRef = useRef(null);
@@ -25,7 +26,7 @@ export function SpaceFishApp() {
     w: 0,
     h: 0,
   });
-  let [music, setMusicUi] = useState(0.7);
+  let [music, setMusicUi] = useState(AUDIO.defaults.music);
   // VP-PHONE-HUD-v0.1 (VP-08): the touch walk hint hides after the first stick move of 0.4 s or longer
   let [walkHintDone, setWalkHintDone] = useState(false);
   let walkHintTimer = useRef(null);

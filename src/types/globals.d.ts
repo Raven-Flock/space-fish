@@ -3,7 +3,7 @@ export {};
 
 declare global {
   interface Window {
-    /** Old Safari prefix, used as a fallback by AudioDirector.unlock(). */
+    /** Old Safari prefix, used as a fallback by AudioDirector.ensureCtx(). */
     webkitAudioContext?: typeof AudioContext;
     /** QA hook shipped in live 69cf5be (see debug/controlsTest.ts). */
     __controlsTest?: {

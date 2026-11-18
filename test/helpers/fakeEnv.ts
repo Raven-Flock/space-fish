@@ -157,18 +157,45 @@ export function installEnv(opts: EnvOptions = {}) {
     set value(v) { this._v = v; audio.add(`${this.name}.value=${fmt(v)}`); }
     setValueAtTime(v: number, t: number) { audio.add(`${this.name}.set(${fmt(v)},${fmt(t)})`); }
     exponentialRampToValueAtTime(v: number, t: number) { audio.add(`${this.name}.ramp(${fmt(v)},${fmt(t)})`); }
+    // F-07 graph automation (bus levels, duck, crossfades). Logged with their own verbs,
+    // so the synth-cue lines (set/ramp) stay comparable with live.
+    setTargetAtTime(v: number, t: number, tau: number) { audio.add(`${this.name}.target(${fmt(v)},${fmt(t)},${fmt(tau)})`); }
+    setValueCurveAtTime(c: ArrayLike<number>, t: number, d: number) { audio.add(`${this.name}.curve(${fmt(c[0])}..${fmt(c[c.length - 1])},${fmt(t)},${fmt(d)})`); }
+    cancelScheduledValues(t: number) { audio.add(`${this.name}.cancel(${fmt(t)})`); }
   }
+  // Fake fetched audio: the bytes are the URL text, so the fake decode can tag the
+  // buffer with it (16 s mono at the context rate).
+  const fakeBytes = (url: string) => new TextEncoder().encode(url).buffer;
   class FakeAudioContext {
     destination = {};
+    sampleRate = 48000;
+    state = "suspended";
+    onstatechange: null | (() => void) = null;
     get currentTime() { return now / 1000; }
-    createGain() { return { gain: new FakeParam("gain"), connect() {} }; }
+    createGain() { return { gain: new FakeParam("gain"), connect() {}, disconnect() {} }; }
     createOscillator() {
       const o: any = { frequency: new FakeParam("freq"), connect() {}, start() { audio.add(`osc.start(${o.type})`); }, stop(t: number) { audio.add(`osc.stop(${fmt(t)})`); } };
       Object.defineProperty(o, "type", { set(v) { o._t = v; audio.add(`osc.type=${v}`); }, get() { return o._t; } });
       return o;
     }
-    resume() { return Promise.resolve(); }
-    close() { return Promise.resolve(); }
+    createDynamicsCompressor() {
+      return { threshold: new FakeParam("comp.threshold"), knee: new FakeParam("comp.knee"), ratio: new FakeParam("comp.ratio"), attack: new FakeParam("comp.attack"), release: new FakeParam("comp.release"), connect() {} };
+    }
+    createBuffer(ch: number, len: number, rate: number) { return { numberOfChannels: ch, length: len, sampleRate: rate, duration: len / rate, __url: "silent" }; }
+    createBufferSource() {
+      const s: any = { buffer: null, loop: false, loopStart: 0, loopEnd: 0, onended: null, playbackRate: { value: 1 }, connect() {}, disconnect() {},
+        start(t = 0, off = 0) { audio.add(`buf.start(${s.buffer?.__url},${fmt(t)},${fmt(off)},loop=${s.loop}${s.playbackRate.value !== 1 ? `,rate=${fmt(s.playbackRate.value)}` : ""})`); },
+        stop(t = 0) { audio.add(`buf.stop(${s.buffer?.__url},${fmt(t)})`); } };
+      return s;
+    }
+    decodeAudioData(ab: any) {
+      const url = new TextDecoder().decode(ab);
+      return Promise.resolve({ numberOfChannels: 1, sampleRate: 48000, length: 16 * 48000, duration: 16, __url: url });
+    }
+    private set(st: string) { if (this.state !== st && this.state !== "closed") { this.state = st; this.onstatechange?.(); } }
+    resume() { this.set("running"); return Promise.resolve(); }
+    suspend() { this.set("suspended"); return Promise.resolve(); }
+    close() { this.set("closed"); return Promise.resolve(); }
   }
   class FakeResizeObserver { observe() {} disconnect() {} }
 
@@ -197,6 +224,7 @@ export function installEnv(opts: EnvOptions = {}) {
   set("requestAnimationFrame", (fn: (t: number) => void) => { rafQ.push([++rafId, fn]); return rafId; });
   set("cancelAnimationFrame", (id: number) => { rafQ = rafQ.filter(([i]) => i !== id); });
   set("performance", { now: () => now });
+  set("fetch", (url: string) => Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(fakeBytes(url)) }));
   set("screen", { orientation: { lock: () => Promise.resolve() } });
 
   return {

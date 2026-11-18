@@ -440,43 +440,49 @@ describe("Sound Design shovel SFX", () => {
     const credits = readFileSync(join(REPO_ROOT, "CREDITS.md"), "utf8");
     expect(credits).toContain("shovel-swing-{a,b,c}.m4a, shovel-tonk-{a,b,c}.m4a — original, Raven Flock, synthesized procedurally (gen_shovel_sfx.py, 2026-11-18).");
   });
-  const plays = (kind: string) => env!.audio.lines.filter((l: string) => l.startsWith(`play(sfx/shovel-${kind}-`)).map((l: string) => l.slice(-6, -5));
-  it("a swing sound on every swing, round-robin with no immediate repeat; tonk only on a hit", () => {
+  // F-07: the shovel files play as decoded buffers on the SFX bus (see shovel-sfx-bus.test.ts),
+  // so a cue shows up as a buf.start line once its file has decoded.
+  const flush = async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); };
+  const plays = (kind: string) => env!.audio.lines
+    .filter((l: string) => l.startsWith(`buf.start(sfx/shovel-${kind}-`))
+    .map((l: string) => l.charAt(`buf.start(sfx/shovel-${kind}-`.length));
+  it("a swing sound on every swing, round-robin with no immediate repeat; tonk only on a hit", async () => {
     const g = boot("rescue");
     place(g, 600, 518);
     g.steerCombat = () => {};
-    for (let i = 0; i < 7; i++) { g.pulseUse(); secs(g, SHOVEL.cooldown + 0.05); } // 7 misses
+    for (let i = 0; i < 7; i++) { g.pulseUse(); secs(g, SHOVEL.cooldown + 0.05); await flush(); } // 7 misses
     const sw = plays("swing");
     expect(sw.length).toBe(7);
     for (let i = 1; i < sw.length; i++) expect(sw[i]).not.toBe(sw[i - 1]);
     expect(plays("tonk").length).toBe(0);
-    for (let i = 0; i < 4; i++) { g.fish = []; fishAt(g, 50, 0); g.pulseUse(); secs(g, SHOVEL.cooldown + SHOVEL.hitStop + 0.05); } // 4 hits
+    for (let i = 0; i < 4; i++) { g.fish = []; fishAt(g, 50, 0); g.pulseUse(); secs(g, SHOVEL.cooldown + SHOVEL.hitStop + 0.05); await flush(); } // 4 hits
     expect(plays("swing").length).toBe(11);
     const tk = plays("tonk");
     expect(tk.length).toBe(4);
     for (let i = 1; i < tk.length; i++) expect(tk[i]).not.toBe(tk[i - 1]);
   });
-  it("gain 1.0, playbackRate within ±3% with pitch following; reduced motion leaves audio unchanged", () => {
+  it("gain 1.0, playbackRate within ±3% with pitch following; reduced motion leaves audio unchanged", async () => {
     const g = boot("rescue", { reducedMotion: true });
     place(g, 600, 518);
     fishAt(g, 50, 0);
-    g.pulseUse(); secs(g, 0.3);
+    g.pulseUse(); secs(g, 0.3); await flush();
     expect(plays("swing").length).toBe(1);
     expect(plays("tonk").length).toBe(1);
-    for (const a of [...g.audio.sfx.swing, ...g.audio.sfx.tonk].filter((a: any) => !a.paused)) {
-      expect(a.volume).toBe(1);
-      expect(a.preservesPitch).toBe(false);
-      expect(Math.abs(a.playbackRate - 1)).toBeLessThanOrEqual(0.03 + 1e-12);
+    const starts = env!.audio.lines.filter((l: string) => l.startsWith("buf.start(sfx/"));
+    for (const l of starts) {
+      const rate = +(l.match(/rate=([\d.]+)/)?.[1] ?? 1);
+      expect(Math.abs(rate - 1)).toBeLessThanOrEqual(SHOVEL_SFX.detune + 1e-12);
     }
+    expect(env!.audio.lines.some((l: string) => l.startsWith("new Audio(sfx/") || l.startsWith("play(sfx/"))).toBe(false);
   });
-  it("nothing plays before audio is unlocked, and menus load no SFX", () => {
+  it("nothing plays before audio is unlocked, and menus load no SFX", async () => {
     env?.restore();
     env = installEnv({ seed: 1 });
     const g: any = new Game(() => {});
     g.attach(env.canvas);
     g.startPhase("rescue");
     g.audio.swing();
+    await flush();
     expect(env.audio.lines.some((l: string) => l.includes("sfx/"))).toBe(false);
-    expect(g.audio.sfx).toBe(null);
   });
 });

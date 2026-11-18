@@ -20,17 +20,13 @@ export const cineMethods = {
       return;
     }
     if (beat.voice) {
-      let t = new Audio(`opening/${beat.voice}.mp3`);
-      t.volume = 0.95;
-      this.voiceEl = t;
-      t.play().catch(() => {});
+      // F-07: the line plays from a decoded buffer on the Web Audio VO bus.
+      this.audio.playVo(beat.voice);
     }
   },
   stopCine(this: Game) {
-    if (this.voiceEl) {
-      this.voiceEl.pause();
-      this.voiceEl.src = "";
-    }
+    // short fade instead of a hard cut (Sound SD-06); also releases the music duck
+    this.audio.stopVo();
     this.voiceEl = null;
   },
   drawCine(this: Game, e) {

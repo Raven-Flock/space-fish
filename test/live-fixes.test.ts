@@ -417,12 +417,14 @@ describe("D-11 shovel melee on Use (§U.9)", () => {
     const g = boot("rescue");
     place(g, 600, 518);
     fishAt(g, 50, 0);
-    const n0 = audioCount();
+    // F-07: the shovel files decode asynchronously, so count the cues at the director
+    const cues: string[] = [];
+    const play = g.audio.playSfx.bind(g.audio);
+    g.audio.playSfx = (k: string) => { cues.push(k); play(k); };
     g.pulseUse(); ticks(g, 1);
-    const n1 = audioCount();
-    expect(n1).toBeGreaterThan(n0);
+    expect(cues).toEqual(["swing"]);
     ticks(g, 5);
-    expect(audioCount()).toBeGreaterThan(n1);
+    expect(cues).toContain("tonk");
   });
 });
 
