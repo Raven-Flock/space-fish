@@ -41,7 +41,10 @@ export const arcadeMethods = {
   },
   resume(this: Game) {
     if (this.mode === "pause") {
-      this.mode = "play";
+      // F-02: a pause taken during a cutscene goes back to the cutscene
+      this.mode = this.pauseFrom === "cutscene" ? "cutscene" : "play";
+      this.pauseFrom = "play";
+      this.onResume();
     }
     this.push(0, true);
   },

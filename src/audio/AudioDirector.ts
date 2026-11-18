@@ -21,8 +21,10 @@ import { random } from "../engine/rng";
 //   UI cues      -> ui bus ------------------+
 //
 // Small API for other systems (F-02 pause calls these; nothing else should touch ctx):
-//   suspend()        hold all audio (pause, auto-pause). Stays held until resume().
-//   resume()         release the hold (resumes unless the page is hidden).
+//   suspend(fadeMs?) hold all audio (pause, auto-pause). Stays held until resume().
+//                    F-02 passes ~40 ms: master fades to 0 first, then the context suspends.
+//   resume(fadeMs?)  release the hold (resumes unless the page is hidden). Master comes back
+//                    at the usual level ramp; F-02 passes 150 ms to fade the music bus in.
 //   setMuted(bool)   master mute, saved in localStorage.
 //   setMusic(0..1)   the existing Music slider, saved as before.
 //   loadVo(name)     decode one intro line early (F-05 calls it after the plate).
@@ -239,14 +241,49 @@ export class AudioDirector {
     if (ac.state !== "running") this.arm(); // iOS may refuse without a gesture: next tap resumes
   }
 
-  /** Hold all audio (F-02: Esc/Pause button, auto-pause on hide/blur). */
-  suspend() {
+  private holdTimer: any = null;
+  /**
+   * Hold all audio (F-02: Esc/Pause button, auto-pause on hide/blur). With fadeMs (F-02,
+   * Sound: ~40 ms) the master gain ramps to 0 first and the context suspends after it, so
+   * pausing never clicks. Without it the context suspends at once.
+   */
+  suspend(fadeMs = 0) {
     this.held = true;
-    this.ac?.suspend()?.catch?.(() => {});
+    clearTimeout(this.holdTimer);
+    this.holdTimer = null;
+    const ac = this.ac;
+    const g = this.master?.gain;
+    if (ac && g && fadeMs > 0 && ac.state === "running") {
+      const t = ac.currentTime;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(this.muted ? 0 : 1, t);
+      g.linearRampToValueAtTime(0, t + fadeMs / 1000);
+      this.holdTimer = setTimeout(() => {
+        this.holdTimer = null;
+        if (this.held) this.ac?.suspend()?.catch?.(() => {});
+      }, fadeMs);
+      return;
+    }
+    ac?.suspend()?.catch?.(() => {});
   }
-  /** Release the hold. Audio comes back unless the page is hidden. */
-  resume() {
+  /**
+   * Release the hold. Audio comes back unless the page is hidden. Master returns to its
+   * level (0 when muted) on the usual level ramp; with musicFadeMs (F-02: 150 ms) the
+   * music bus fades in from silence over that long.
+   */
+  resume(musicFadeMs = 0) {
     this.held = false;
+    clearTimeout(this.holdTimer);
+    this.holdTimer = null;
+    this.ramp(this.master?.gain, this.muted ? 0 : 1);
+    const ac = this.ac;
+    const m = this.bus?.music.gain;
+    if (ac && m && musicFadeMs > 0) {
+      const t = ac.currentTime;
+      m.cancelScheduledValues(t);
+      m.setValueAtTime(0, t);
+      m.linearRampToValueAtTime(this.busGain("music"), t + musicFadeMs / 1000);
+    }
     if (!this.hidden) this.wake();
   }
   setMuted(m: boolean) {

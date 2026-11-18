@@ -9,6 +9,7 @@ import { inputMethods } from "../engine/input";
 import { playerMethods } from "./player";
 import { weaponsMethods } from "./weapons";
 import { shovelMethods } from "./shovel";
+import { pauseMethods } from "./pause";
 import { projectilesMethods } from "./projectiles";
 import { particlesMethods } from "./particles";
 import { holdoutsMethods } from "./holdouts";
@@ -162,6 +163,10 @@ export class Game {
     oy: 0,
   };
   tap = null;
+  /** F-02 pause: what was running when paused ("play" or "cutscene"), the resume input lock, gamepad Start edge */
+  pauseFrom = "play";
+  resumeLockUntil = 0;
+  padStart = false;
   declare cine: any;
   declare cineVid: any;
   declare voiceEl: any;
@@ -174,6 +179,7 @@ export class Game {
     this.reduce =
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     this.bindInputs();
+    this.bindPause();
     this.loadArt();
     this.loadCine();
     this.resize();
@@ -204,6 +210,11 @@ export class Game {
     return this.player.x;
   }
   tick(dt) {
+    if (this.pausedFreeze()) {
+      // F-02: paused means the whole sim holds still (no timers, particles, scroll or beats)
+      this.push(dt);
+      return;
+    }
     this.time += dt;
     this.invuln = Math.max(0, this.invuln - dt);
     this.fireCd = Math.max(0, this.fireCd - dt);
@@ -343,6 +354,7 @@ type Methods = typeof arcadeMethods &
   typeof playerMethods &
   typeof weaponsMethods &
   typeof shovelMethods &
+  typeof pauseMethods &
   typeof projectilesMethods &
   typeof particlesMethods &
   typeof holdoutsMethods &
@@ -369,6 +381,7 @@ installMethods(
   playerMethods,
   weaponsMethods,
   shovelMethods,
+  pauseMethods,
   projectilesMethods,
   particlesMethods,
   holdoutsMethods,

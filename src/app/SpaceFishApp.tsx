@@ -5,9 +5,10 @@ import { Game } from "../game/Game";
 import { stickOut, phoneTouch, lockLandscape } from "./controls";
 import { musicKnob, Panel, BuildButton, PadButton } from "./widgets";
 import { REPAIR_HINT } from "../content/tuning/build";
-import { HUD_HINT, TITLE_HELP } from "../content/hud";
+import { HUD_HINT, PAUSE_COPY, TITLE_HELP } from "../content/hud";
 import { HUD_TIMING } from "../content/tuning/hud";
 import { AUDIO } from "../content/tuning/audio";
+import { PAUSE } from "../content/tuning/pause";
 export function SpaceFishApp() {
   let canvasRef = useRef(null);
   let gameRef = useRef(null);
@@ -35,6 +36,16 @@ export function SpaceFishApp() {
     walkHintTimer.current = null;
   };
   useEffect(() => () => clearTimeout(walkHintTimer.current), []);
+  // F-02 pause panel: Mute toggle (persisted by AudioDirector) and the Menu confirm step
+  let [muted, setMutedUi] = useState(false);
+  let [confirmMenu, setConfirmMenu] = useState(false);
+  // VP: Stay is the primary button and has focus when the confirm opens
+  let stayRef = useRef(null);
+  useEffect(() => {
+    if (confirmMenu) {
+      stayRef.current?.focus();
+    }
+  }, [confirmMenu]);
   useEffect(() => {
     let e = () => {
       let t = window.matchMedia?.("(pointer: coarse)").matches;
@@ -105,6 +116,22 @@ export function SpaceFishApp() {
     } catch {}
   }, []);
   useEffect(() => {
+    setMutedUi(!!gameRef.current?.audio.muted);
+  }, []);
+  useEffect(() => {
+    // F-02: leaving play drops any held stick (the game clears its own held input on pause)
+    if (snap.mode !== "play" && stickPointer.current != null) {
+      stickPointer.current = null;
+      setKnob({
+        x: 0,
+        y: 0,
+      });
+    }
+    if (snap.mode !== "pause") {
+      setConfirmMenu(false);
+    }
+  }, [snap.mode]);
+  useEffect(() => {
     let n = requestAnimationFrame(() => gameRef.current?.resize());
     return () => cancelAnimationFrame(n);
   }, [forced, vp.w, vp.h]);
@@ -115,7 +142,10 @@ export function SpaceFishApp() {
     });
     return () => window.removeEventListener("pointerdown", n);
   }, []);
-  let inRun = snap.mode === "play" || snap.mode === "pause";
+  // a pause taken during a cutscene shows only the Paused panel, not the play HUD
+  let pausedCut =
+    snap.mode === "pause" && gameRef.current?.pauseFrom === "cutscene";
+  let inRun = snap.mode === "play" || (snap.mode === "pause" && !pausedCut);
   let moveStick = (e) => {
     if (stickPointer.current !== e.pointerId || !stickRef.current) {
       return;
@@ -184,9 +214,66 @@ export function SpaceFishApp() {
           ref={canvasRef}
           className="absolute inset-0 h-full w-full touch-none"
         />
+        {snap.mode === "play" && (
+          <button
+            type="button"
+            data-f02="pause"
+            aria-label={PAUSE_COPY.pause}
+            title="Pause (Esc or P)"
+            className="pointer-events-auto absolute"
+            style={{
+              // VP v0.1.2: a transparent 44x44 hit box; the 36x36 plate sits at its top
+              // (inside the 36 px strip), so the box hangs 8 px below. The plate keeps
+              // max(12px, safe-area inset) from the top and right edges.
+              top: forced
+                ? `max(${PAUSE.edgePx}px, env(safe-area-inset-right))`
+                : `max(${PAUSE.edgePx}px, env(safe-area-inset-top))`,
+              right: `calc(${
+                forced
+                  ? `max(${PAUSE.edgePx}px, env(safe-area-inset-bottom))`
+                  : `max(${PAUSE.edgePx}px, env(safe-area-inset-right))`
+              } - ${(PAUSE.hitPx - PAUSE.platePx) / 2}px)`,
+              width: PAUSE.hitPx,
+              height: PAUSE.hitPx,
+              zIndex: 31,
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "center",
+              padding: 0,
+              border: 0,
+              background: "transparent",
+              touchAction: "none",
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => gameRef.current?.pauseGame()}
+          >
+            <span
+              aria-hidden="true"
+              style={{
+                width: PAUSE.platePx,
+                height: PAUSE.platePx,
+                borderRadius: PAUSE.plateRadius,
+                background: PAUSE.plateColor,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: PAUSE.barGap,
+              }}
+            >
+              <span style={{ width: PAUSE.barW, height: PAUSE.barH, background: PAUSE.barColor }} />
+              <span style={{ width: PAUSE.barW, height: PAUSE.barH, background: PAUSE.barColor }} />
+            </span>
+          </button>
+        )}
         <div className="pointer-events-none absolute inset-0 flex flex-col">
           {inRun && (
-            <header className="flex items-start justify-between gap-3 p-3 sm:p-4">
+            <header
+              className="flex items-start justify-between gap-3 p-3 sm:p-4"
+              style={{
+                // keeps the header card PAUSE.clearPx clear of the Pause hit box
+                paddingRight: `calc(${forced ? `max(${PAUSE.edgePx}px, env(safe-area-inset-bottom))` : `max(${PAUSE.edgePx}px, env(safe-area-inset-right))`} + ${PAUSE.hitPx - (PAUSE.hitPx - PAUSE.platePx) / 2 + PAUSE.clearPx}px)`,
+              }}
+            >
               <div className="max-w-xl rounded-lg border border-border bg-surface/90 px-3 py-2 backdrop-blur-sm">
                 <div className="flex items-center gap-3">
                   <p className="font-display text-sm font-bold tracking-wide text-primary">
@@ -378,22 +465,56 @@ export function SpaceFishApp() {
                 setMusicUi(e);
                 gameRef.current?.setMusic(e);
               })}
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="rounded-lg bg-primary px-5 py-3 font-display font-bold text-on-primary"
-                  onClick={() => gameRef.current?.resume()}
-                >
-                  Resume
-                </button>
-                <button
-                  type="button"
-                  className="rounded-lg border border-border px-5 py-3 font-display font-bold"
-                  onClick={() => gameRef.current?.backToMenu()}
-                >
-                  Menu
-                </button>
-              </div>
+              {confirmMenu ? (
+                <div className="flex flex-wrap items-center gap-2" data-f02="confirm">
+                  <p className="text-sm text-muted">{PAUSE_COPY.confirm}</p>
+                  <button
+                    type="button"
+                    ref={stayRef}
+                    className="rounded-lg bg-primary px-5 py-3 font-display font-bold text-on-primary"
+                    onClick={() => setConfirmMenu(false)}
+                  >
+                    {PAUSE_COPY.stay}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-border px-5 py-3 font-display font-bold"
+                    onClick={() => gameRef.current?.quitToTitle()}
+                  >
+                    {PAUSE_COPY.leave}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg bg-primary px-5 py-3 font-display font-bold text-on-primary"
+                    onClick={() => gameRef.current?.resume()}
+                  >
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    data-f02="mute"
+                    aria-pressed={muted}
+                    className="rounded-lg border border-border px-5 py-3 font-display font-bold"
+                    onClick={() => {
+                      let m = !muted;
+                      setMutedUi(m);
+                      gameRef.current?.audio.setMuted(m);
+                    }}
+                  >
+                    {muted ? PAUSE_COPY.unmute : PAUSE_COPY.mute}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-border px-5 py-3 font-display font-bold"
+                    onClick={() => setConfirmMenu(true)}
+                  >
+                    Menu
+                  </button>
+                </div>
+              )}
             </Panel>
           )}
           {snap.mode === "dead" && (

@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 // Parity for the React shell vs live 1c9c028: same pre-rendered markup, and the same DOM
 // after every step of a scripted session (title, intro, HUD per phase, pause, credits,
-// death, build bar), with the game loop driven by a fake clock.
+// death, build bar), with the game loop driven by a fake clock. Our session runs with
+// INTENDED's entry points stubbed; the F-02 controls are stripped (withoutF02) and the
+// real pause UI is asserted in touch-pause-ui.test.tsx.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { act, createElement } from "react";
@@ -11,8 +13,10 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { Root } from "../src/app/SpaceFishApp";
 import { HUD_HINT, TITLE_HELP } from "../src/content/hud";
 import { HUD_TIMING } from "../src/content/tuning/hud";
+import { Game } from "../src/game/Game";
 import { mulberry32 } from "./helpers/fakeEnv";
 import { REPO_ROOT, loadLive } from "./helpers/liveOracle";
+import { INTENDED } from "./helpers/sim";
 
 let live: any;
 beforeAll(async () => {
@@ -58,7 +62,7 @@ function setupBrowser(seed: number, w = 1280, h = 800, coarse = false) {
   };
 }
 
-async function session(App: any, coarse = false) {
+async function session(App: any, coarse = false, _ours = false) {
   const b = setupBrowser(42, coarse ? 844 : 1280, coarse ? 390 : 800, coarse);
   const host = document.createElement("div");
   document.body.innerHTML = "";
@@ -96,7 +100,10 @@ async function session(App: any, coarse = false) {
   b.frames(600); snap("stealth later");
   for (const phase of ["rescue", "base", "shooter"]) {
     key("Escape"); b.frames(5);
-    click("Menu"); b.frames(5); snap(`menu from ${phase}`);
+    click("Menu");
+    // F-02: Menu on the Paused panel asks for a one-line confirm first (the death panel's doesn't)
+    if ([...host.querySelectorAll("button")].some((x) => x.textContent?.trim() === "Leave")) click("Leave");
+    b.frames(5); snap(`menu from ${phase}`);
     history.replaceState(null, "", `/space-fish/?phase=${phase}`);
     click("Start"); b.frames(30); snap(`${phase} HUD`);
     if (phase === "base") { key("Digit2"); b.frames(10); snap("base build picked"); }
@@ -121,6 +128,34 @@ const COPY: Array<[string, string]> = [
     'aria-label="Music volume" style="width: 9rem; accent-color: rgb(212, 162, 74);" type="range" value="0.8"',
   ],
 ];
+/**
+ * F-02 touch pause: the new controls (Pause button, Mute toggle) carry data-f02 and are
+ * removed from our DOM before comparing, and the header's right padding that keeps the
+ * Pause button 8 px clear is dropped. Each must actually appear, so a stale rule fails.
+ */
+function withoutF02(s: string, seen: Set<string>) {
+  return s
+    .replace(/<button[^>]*data-f02="(pause|mute)"[^>]*>.*?<\/button>/g, (_m, k) => { seen.add(k); return ""; })
+    .replace(/<header class="([^"]*)" style="padding-right:[^"]*">/g, (_m, c) => { seen.add("header"); return `<header class="${c}">`; });
+}
+/** F-02's stubbed entry points (see INTENDED in helpers/sim.ts). */
+const F02_METHODS = ["pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad"];
+/**
+ * Run our Root with F-02's entry points stubbed (as liveEquivalent does for the sim), so the
+ * DOM session follows live's pause path. Earlier PRs' intended changes stay on: their copy
+ * differences are applied to live's DOM by withCopy instead.
+ */
+async function intendedOff<T>(fn: () => Promise<T>): Promise<T> {
+  const proto = Game.prototype as any;
+  for (const m of F02_METHODS) expect(INTENDED.methods).toContain(m);
+  const saved = F02_METHODS.map((m) => [m, proto[m]] as const);
+  for (const m of F02_METHODS) proto[m] = function () { return false; };
+  try {
+    return await fn();
+  } finally {
+    for (const [m, f] of saved) proto[m] = f;
+  }
+}
 function withCopy(s: string, used: Set<number>, coarse = false) {
   COPY.forEach(([from, to], i) => {
     if (s.includes(from)) {
@@ -174,21 +209,25 @@ describe("React shell matches live 1c9c028 (plus intended copy changes)", () => 
 
   it("desktop session: same DOM after every step", async () => {
     const a = await session(live.Root);
-    const b = await session(Root);
+    const b = await intendedOff(() => session(Root, false, true));
     const used = new Set<number>();
+    const seen = new Set<string>();
     expect(b[1]).toBe("qa-hook function menu function");
     expect(b.length).toBe(a.length);
-    for (let i = 0; i < a.length; i++) expect(b[i]).toBe(withCopy(a[i], used));
+    for (let i = 0; i < a.length; i++) expect(withoutF02(b[i], seen)).toBe(withCopy(a[i], used));
     expect([...used].sort()).toEqual([0, 1, 2]);
+    expect([...seen].sort()).toEqual(["header", "mute", "pause"]);
   });
 
   it("phone (coarse pointer) session: same DOM after every step", async () => {
     const a = await session(live.Root, true);
-    const b = await session(Root, true);
+    const b = await intendedOff(() => session(Root, true, true));
     const used = new Set<number>();
+    const seen = new Set<string>();
     expect(b.length).toBe(a.length);
-    for (let i = 0; i < a.length; i++) expect(b[i]).toBe(withCopy(a[i], used, true));
+    for (let i = 0; i < a.length; i++) expect(withoutF02(b[i], seen)).toBe(withCopy(a[i], used, true));
     expect([...used].sort((x, y) => x - y)).toEqual([0, 1, 2, 10, 11, 12, 13]);
+    expect([...seen].sort()).toEqual(["header", "mute", "pause"]);
   });
 
   it("no 'walk' anywhere in Transit (desktop and phone), and Use is hidden there on a phone", async () => {
