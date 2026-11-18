@@ -639,9 +639,15 @@ export class AudioDirector {
    * PR #10 v0.3.1 (QA): decode the six shovel cues at audio unlock (Start/Continue/Retry),
    * not on the first swing. Nothing loads before unlock, so menus load nothing new;
    * loadSfx() caches, so a second unlock (Retry) fetches nothing again.
+   * F-05 (WP 4): while the intro plate gate is shut, the cues wait for it like music does
+   * (plate 1 + opening VO first); a chapter start opens the gate at once.
    */
   primeSfx() {
-    for (const u of [...SHOVEL_SFX.swing, ...SHOVEL_SFX.tonk]) this.loadSfx(u);
+    const go = () => {
+      for (const u of [...SHOVEL_SFX.swing, ...SHOVEL_SFX.tonk]) this.loadSfx(u);
+    };
+    if (this.musicGate) this.musicGate.then(go);
+    else go();
   }
 
   /**

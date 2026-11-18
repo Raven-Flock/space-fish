@@ -150,6 +150,7 @@ describe("fetch order: intro first, deferred music, no 49 parallel requests at b
     net!.resolve("opening/open.mp3");
     await flush();
     expect(net!.urls.filter((u) => u.startsWith("music/"))).toEqual(["music/rim.mp3"]);
+    expect(net!.urls.filter((u) => u.startsWith("sfx/")).length).toBe(6); // the shovel prime (PR #10 v0.3.1) waits for the same gate
     expect(imgs.requested.filter((s) => s.startsWith("opening/"))).toEqual([plate("dig")]); // plates 2-6 wait for the loop
     net!.resolve("music/rim.mp3");
     await flush();
@@ -184,6 +185,7 @@ describe("fetch order: intro first, deferred music, no 49 parallel requests at b
       expect(g.mode, how).toBe("play");
       expect(imgs.requested, how).toContain("rim/rock.png");
       expect(net!.urls.some((u) => u.startsWith("music/")), how).toBe(true);
+      expect(net!.urls.filter((u) => u.startsWith("sfx/")).length, how).toBe(6);
       expect(g.audio.musicGate, how).toBeNull();
       expect(g.audio.groupHeld, how).toBe(false);
     }
