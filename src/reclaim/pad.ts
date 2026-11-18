@@ -8,7 +8,14 @@ export const padMethods = {
   },
   dropBuild(this: Game) {
     let e = this.dirVector();
-    this.tryPlace(this.player.x + e.x * 78, this.player.y + e.y * 78);
+    let x = this.player.x + e.x * 78;
+    let y = this.player.y + e.y * 78;
+    if (this.mode === "play" && this.phase === "base" && !this.nearestWreck(x, y, 72)) {
+      // QA N-6: "Repair ahead" with no wreck in range was silent; same refusal blip as short scrap
+      this.audio.blip();
+      return;
+    }
+    this.tryPlace(x, y);
   },
   nearestWreck(this: Game, x, y, range, kind = null) {
     let best = null;

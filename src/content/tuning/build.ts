@@ -9,4 +9,4 @@ export const BUILD_LABEL = {
   lab: "Lab",
 };
 export const REPAIR_HINT =
-  "Tap a wreck to repair it. Same scrap cost. Nothing new gets placed.";
+  "Tap a wreck to repair it. Same scrap cost.";

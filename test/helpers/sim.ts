@@ -5,9 +5,37 @@ import { installEnv, type Env, type EnvOptions } from "./fakeEnv";
 
 const SKIP = new Set(["audio", "onSnap", "canvas", "ctx", "unbind", "art", "rim", "cine", "cineVid", "voiceEl", "keys", "qaKeys"]);
 
+/**
+ * Intended differences from live 1c9c028 (this PR: touch-aim fix N-1, D-11 shovel melee
+ * on Use and on Rim Fire/Dig).
+ * Parity runs our Game with exactly these entry points stubbed (liveEquivalent), and
+ * the new state they own is dropped from the trace only while it holds its inert
+ * default, so any leak of the new behaviour into a parity run still shows as a diff.
+ */
+export const INTENDED = {
+  methods: ["clearTouchAim", "shovelFire", "tickShovel", "tryShovel"],
+  helpers: ["drawShovelTrail", "shovelNoise", "useInteractableNear"],
+  state: { swing: null, swingCd: 0, hitStop: 0 } as Record<string, unknown>,
+  fishKeys: ["stagger", "staggerImmune"],
+};
+
+/** Our Game with only the intended new entry points turned off: must equal live 1c9c028. */
+export function liveEquivalent<T extends new (...a: any[]) => any>(G: T): T {
+  class LiveEquivalent extends G {}
+  for (const m of INTENDED.methods) {
+    if (typeof (G.prototype as any)[m] !== "function") throw new Error(`intended method missing: ${m}`);
+    (LiveEquivalent.prototype as any)[m] = function () { return false; };
+  }
+  return LiveEquivalent;
+}
+
 export function pickState(g: any) {
   const out: Record<string, any> = {};
-  for (const k of Object.keys(g)) if (!SKIP.has(k)) out[k] = g[k];
+  for (const k of Object.keys(g)) {
+    if (SKIP.has(k)) continue;
+    if (k in INTENDED.state && g[k] === INTENDED.state[k]) continue;
+    out[k] = g[k];
+  }
   out.keys = [...g.keys].sort();
   out.audioMood = g.audio.mood;
   out.musicVol = g.audio.musicVol;
@@ -55,7 +83,7 @@ export function runSim(GameClass: any, o: SimOptions) {
 
 /**
  * Deterministic autopilot, ported from QA's qa-run/autopilot.js (same routes and
- * build plan). It plays only through the game's own input listeners.
+ * Pad repair route for 1c9c028). It plays only through the game's own input listeners.
  */
 export function makeAutopilot() {
   const down = new Set<string>();
@@ -67,14 +95,13 @@ export function makeAutopilot() {
   let side = 1;
   let wait = 0;
   let dodge = 1;
-  let placeBase = -1;
   const releases: Array<[number, string]> = [];
   const plans: Record<string, any[]> = {
     stealth: [{ go: [600, 945] }, { go: [1300, 945] }, { go: [1860, 950] }, { go: [1860, 1000] }],
     rescue: [{ go: [130, 300] }, { go: [250, 215], use: 1 }, { go: [300, 518] }, { go: [600, 518] }, { go: [700, 770], use: 2 }, { go: [760, 860] }, { go: [1100, 860] }, { go: [1250, 478] }, { go: [1550, 478] }, { go: [1620, 275], use: 3 }],
-    base: [{ go: [780, 480] }, { go: [640, 200] }, { go: [500, 420] }, { place: "gen", at: [500, 560] }, { go: [1000, 520] }, { place: "turret", at: [1120, 420] }, { place: "turret", at: [1200, 500] }, { go: [900, 860] }, { go: [200, 980] }, { go: [180, 280] }, { go: [300, 600] }, { place: "lab", at: [300, 840] }, { go: [1080, 330], burn: 1 }, { go: [420, 700], launch: 1 }],
+    // 1c9c028: the Pad repairs four pre-placed wrecks (click within 72 px); nothing is placed.
+    base: [{ go: [780, 480] }, { go: [640, 200] }, { go: [480, 440] }, { repair: [480, 360] }, { go: [860, 560] }, { repair: [860, 640] }, { go: [900, 860] }, { go: [200, 980] }, { go: [340, 840] }, { repair: [340, 920] }, { go: [180, 280] }, { go: [240, 420] }, { repair: [240, 500] }, { go: [1080, 330], burn: 1 }, { go: [420, 700], launch: 1 }],
   };
-  const digit: Record<string, string> = { gen: "Digit1", turret: "Digit2", lab: "Digit3" };
   return function autopilot(g: any, env: Env, frame: number) {
     for (let i = releases.length - 1; i >= 0; i--) {
       if (releases[i][0] <= frame) { env.key("keyup", releases[i][1]); releases.splice(i, 1); }
@@ -117,7 +144,14 @@ export function makeAutopilot() {
     }
     const s = plans[g.phase][step];
     if (!s) return;
-    if (g.phase !== "stealth") key("Space", true);
+    if (g.phase !== "stealth") {
+      key("Space", true);
+      // 1c9c028 locks on only within ±0.55 rad of the aim, so aim the mouse at the nearest fish (QA autopilot2 aims too)
+      let best: any = null, bd = 300;
+      for (const f of g.fish) { const d = Math.hypot(f.x - g.player.x, f.y - g.player.y); if (d < bd) { bd = d; best = f; } }
+      if (!best && g.phase === "base" && g.nest.hp > 0 && Math.hypot(g.nest.x - g.player.x, g.nest.y - g.player.y) < 340) best = g.nest;
+      if (best) { const p = screen(best.x, best.y); env.pointer("pointermove", p.x, p.y); }
+    }
     if (s.go) {
       if (s.burn && g.nest.hp > 0) { moveTo(s.go[0], s.go[1], 30); return; }
       if (!moveTo(s.go[0], s.go[1], 14)) return;
@@ -126,12 +160,10 @@ export function makeAutopilot() {
       step++;
       return;
     }
-    if (s.place) {
-      if (placeBase < 0) placeBase = g.structures.length;
-      if (g.structures.length > placeBase) { if (g.build) tap(digit[s.place]); placeBase = -1; step++; return; }
-      if (g.build !== s.place) { tap(digit[s.place]); return; }
-      const p = screen(s.at[0], s.at[1]);
-      env.pointer("pointerdown", p.x, p.y);
+    if (s.repair) {
+      const w = g.structures.find((x: any) => x.x === s.repair[0] && x.y === s.repair[1]);
+      if (!w || w.repaired) { step++; return; }
+      if (frame >= wait) { const p = screen(w.x, w.y); env.pointer("pointerdown", p.x, p.y); wait = frame + 18; }
     }
   };
 }

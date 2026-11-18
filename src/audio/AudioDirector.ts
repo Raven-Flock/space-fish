@@ -143,4 +143,12 @@ export class AudioDirector {
   alarm() {
     this.tone(466, 0.16, "square", 0.04);
   }
+  // D-11 shovel cues. Placeholders reuse existing tones until SD delivers the
+  // whoosh and metal "tonk" (-2 LU mix rule).
+  swing() {
+    this.shoot(false);
+  }
+  tonk() {
+    this.blip();
+  }
 }

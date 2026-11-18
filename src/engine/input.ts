@@ -205,17 +205,30 @@ export const inputMethods = {
     let e = this.dirVector();
     return Math.atan2(e.y, e.x);
   },
+  // A touch aim is a world point picked while Fire is held. It is only valid
+  // until Fire is released, the stick moves, or a chapter (re)starts; after that
+  // the aim falls back to facing. (QA N-1: it used to persist forever.)
+  clearTouchAim(this: Game) {
+    if (this.aimPointer === "touch") {
+      this.aimOk = false;
+    }
+  },
   setStick(this: Game, x, y, touching) {
     this.stickX = x;
     this.stickY = y;
     if (touching || x !== 0 || y !== 0) {
       this.tap = null;
     }
+    if (x !== 0 || y !== 0) {
+      this.clearTouchAim();
+    }
   },
   setFire(this: Game, down) {
     this.fireLatch = down;
     if (down) {
       this.tap = null;
+    } else {
+      this.clearTouchAim();
     }
   },
   toggleSneak(this: Game) {

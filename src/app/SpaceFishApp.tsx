@@ -305,7 +305,8 @@ export function SpaceFishApp() {
               <p className="text-xs leading-relaxed text-muted">
                 WASD moves. Shift sneaks. The rim is shovel only — no gun until
                 the cache. After that, Space or click fires where you aim. Q
-                throws noise. E uses. On a phone, turn sideways. Stick to walk.
+                throws noise. E: use, or swing the shovel. Space steps a scene
+                forward. Esc pauses. On a phone, turn sideways. Stick to walk.
                 Hold Fire and tap the ground to aim.
               </p>
               {ready &&

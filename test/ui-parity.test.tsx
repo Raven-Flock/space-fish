@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// R0 parity for the React shell: same pre-rendered markup as live, and the same DOM
+// Parity for the React shell vs live 1c9c028: same pre-rendered markup, and the same DOM
 // after every step of a scripted session (title, intro, HUD per phase, pause, credits,
 // death, build bar), with the game loop driven by a fake clock.
 import { readFileSync } from "node:fs";
@@ -104,28 +104,57 @@ async function session(App: any, coarse = false) {
   return out;
 }
 
-describe("React shell matches live 69cf5be", () => {
-  it("server markup equals live, and index.html ships it pre-rendered", () => {
+// Intended copy changes in this PR (QA N-7 + the D-11 shovel hint), applied to live's
+// output before comparing. Each must be used, so a stale exception fails the suite.
+const COPY: Array<[string, string]> = [
+  [
+    "Q throws noise. E uses. On a phone,",
+    "Q throws noise. E: use, or swing the shovel. Space steps a scene forward. Esc pauses. On a phone,",
+  ],
+  ["Tap a wreck to repair it. Same scrap cost. Nothing new gets placed.", "Tap a wreck to repair it. Same scrap cost."],
+];
+function withCopy(s: string, used: Set<number>) {
+  COPY.forEach(([from, to], i) => {
+    if (s.includes(from)) {
+      used.add(i);
+      s = s.split(from).join(to);
+    }
+  });
+  return s;
+}
+
+describe("React shell matches live 1c9c028 (plus intended copy changes)", () => {
+  it("server markup equals live, and both index.html files ship the matching pre-render (QA N-4, #418)", () => {
     const a = renderToString(createElement(live.Root));
     const b = renderToString(createElement(Root));
-    expect(b).toBe(a);
+    const used = new Set<number>();
+    expect(b).toBe(withCopy(a, used));
+    expect(used.has(0)).toBe(true);
+    // the served root index.html hydrates the live bundle, so it must hold live's markup
     const liveIndex = readFileSync(join(REPO_ROOT, "index.html"), "utf8");
+    const live404 = readFileSync(join(REPO_ROOT, "404.html"), "utf8");
     const srcIndex = readFileSync(join(REPO_ROOT, "src", "index.html"), "utf8");
-    expect(liveIndex).toContain(b);
+    expect(liveIndex).toContain(`<div id="root" style="display: contents">${a}</div>`);
+    expect(live404).toContain(`<div id="root" style="display: contents">${a}</div>`);
     expect(srcIndex).toContain(`<div id="root" style="display: contents">${b}</div>`);
   });
 
   it("desktop session: same DOM after every step", async () => {
     const a = await session(live.Root);
     const b = await session(Root);
+    const used = new Set<number>();
     expect(b[1]).toBe("qa-hook function menu function");
     expect(b.length).toBe(a.length);
-    for (let i = 0; i < a.length; i++) expect(b[i]).toBe(a[i]);
+    for (let i = 0; i < a.length; i++) expect(b[i]).toBe(withCopy(a[i], used));
+    expect([...used].sort()).toEqual([0, 1]);
   });
 
   it("phone (coarse pointer) session: same DOM after every step", async () => {
     const a = await session(live.Root, true);
     const b = await session(Root, true);
-    for (let i = 0; i < a.length; i++) expect(b[i]).toBe(a[i]);
+    const used = new Set<number>();
+    expect(b.length).toBe(a.length);
+    for (let i = 0; i < a.length; i++) expect(b[i]).toBe(withCopy(a[i], used));
+    expect([...used].sort()).toEqual([0, 1]);
   });
 });

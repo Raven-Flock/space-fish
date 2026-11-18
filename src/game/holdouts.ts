@@ -5,7 +5,7 @@ export const holdoutsMethods = {
     for (let e of this.holdouts) {
       if (!e.freed && !(hyp(e.x - this.player.x, e.y - this.player.y) > 64)) {
         if (this.fish.some((t) => hyp(t.x - e.x, t.y - e.y) < 110)) {
-          return;
+          return false;
         }
         e.freed = true;
         this.freedCount += 1;
@@ -15,8 +15,9 @@ export const holdoutsMethods = {
         } else {
           this.beginCutscene("freed");
         }
-        return;
+        return true;
       }
     }
+    return false;
   },
 };

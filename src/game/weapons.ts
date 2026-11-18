@@ -3,6 +3,11 @@ import { hyp } from "../engine/math";
 export const weaponsMethods = {
   shootGround(this: Game) {
     if (this.weapon !== "laser") {
+      // D-11 (GD ruling 4): Rim Fire/Dig follows the Use rule -- it swings the
+      // shovel unless a dig spot is within 40 px, where it digs as before.
+      if (this.shovelFire()) {
+        return;
+      }
       this.shovelT = 0.34;
       this.fireCd = 0.42;
       return;

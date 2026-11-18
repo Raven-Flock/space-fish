@@ -18,9 +18,12 @@ export const fishMethods = {
   tickFish(this: Game, dt, sneaking) {
     for (let n of this.fish) {
       if (n.hp > 0) {
-        this.phase === "stealth"
-          ? this.steerStealth(n, dt, sneaking)
-          : this.steerCombat(n, dt);
+        // a shovel-staggered fish neither moves nor chases (D-11)
+        if (!(n.stagger > 0)) {
+          this.phase === "stealth"
+            ? this.steerStealth(n, dt, sneaking)
+            : this.steerCombat(n, dt);
+        }
         if (
           hyp(n.x - this.player.x, n.y - this.player.y) < FISH.contactRadius &&
           this.invuln <= 0
