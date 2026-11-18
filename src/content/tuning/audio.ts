@@ -8,8 +8,9 @@ export const AUDIO = {
   /**
    * Trim on the synth tone() cues only (a fixed node in front of the SFX bus): the live
    * game ran every tone() through a 0.22 master gain. Sound: keep 0.22 until SD-03
-   * calibrates the mix. File SFX (the shovel) skip it and play at gain 1.0, Sound's
-   * target level, so the shovel stands out against the beeps by design until SD-03.
+   * calibrates the mix. File SFX (the shovel) skip it: each shovel cue has its own
+   * SHOVEL_CUE_TRIM gain (0.48, content/tuning/sfx.ts) into the SFX bus at 1.0, so
+   * sfx bus 1.0 x shovel cue trim 0.48.
    */
   synthTrim: 0.22,
   /** per-line gain the live game gave VO (HTMLAudio volume 0.95) */

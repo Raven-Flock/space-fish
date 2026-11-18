@@ -1,8 +1,8 @@
 // v0.3 additions to PR #10, asserted on the real Game:
 // F-01 per GD's Nov 18 ruling (Rim chase 140, a shovel hit breaks the chase: 1.2 s search,
 // 3.0 s anti-lock, alert drains as usual), QA N-5 (click-repair reach), QA N-8 (facing
-// lock cone), VP-PHONE-HUD-v0.1 copy, and Sound Design's shovel SFX (v0.3.1: the 0.53
-// shovel cue trim from Sound's level correction, and the cues primed at audio unlock).
+// lock cone), VP-PHONE-HUD-v0.1 copy, and Sound Design's shovel SFX (v0.3.1: the shovel
+// cue trim from Sound's level correction, 0.48 on F-07's curve, and the cues primed at audio unlock).
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -487,13 +487,13 @@ describe("Sound Design shovel SFX", () => {
     await flush();
     expect(env.audio.lines.some((l: string) => l.includes("sfx/"))).toBe(false);
   });
-  it("v0.3.1 level correction: every shovel cue (swing and tonk, all variants) plays at volume 0.53, whatever the Music slider says", async () => {
-    expect(SHOVEL_CUE_TRIM).toBe(0.53);
+  it("level correction (0.48 on F-07's curve): every shovel cue (swing and tonk, all variants) plays at cue trim 0.48, whatever the Music slider says", async () => {
+    expect(SHOVEL_CUE_TRIM).toBe(0.48);
     const g = boot("rescue");
     place(g, 600, 518);
     g.steerCombat = () => {};
     await flush();
-    // F-07: each cue is source -> its own gain node -> SFX bus (sfx bus 1.0 x shovel cue trim 0.53)
+    // F-07: each cue is source -> its own gain node -> SFX bus (sfx bus 1.0 x shovel cue trim 0.48)
     const ac = g.audio.ac;
     const cues: any[] = [];
     const mk = ac.createGain.bind(ac);
@@ -512,7 +512,7 @@ describe("Sound Design shovel SFX", () => {
     expect(new Set(plays("swing"))).toEqual(new Set(["a", "b", "c"]));
     expect(new Set(plays("tonk"))).toEqual(new Set(["a", "b", "c"]));
     expect(cues.length).toBe(27);
-    for (const n of cues) expect(n.gain.value).toBe(0.53);
+    for (const n of cues) expect(n.gain.value).toBe(0.48);
     // the trim is per cue: the SFX bus stays at 1.0 and the synth beeps keep their own 0.22
     expect(g.audio.busGain("sfx")).toBe(1);
     expect(g.audio.bus.sfx.gain.value).toBe(1);

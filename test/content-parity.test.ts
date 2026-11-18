@@ -14,7 +14,7 @@ import { AudioDirector } from "../src/audio/AudioDirector";
 import { Game } from "../src/game/Game";
 import { mulberry32, installEnv } from "./helpers/fakeEnv";
 import { REPO_ROOT, LIVE_CHUNK, loadLive, liveModuleSource } from "./helpers/liveOracle";
-import { INTENDED } from "./helpers/sim";
+import { INTENDED, liveStorage, synthLines } from "./helpers/sim";
 
 let live: any;
 beforeAll(async () => {
@@ -81,7 +81,7 @@ describe("constant tables equal live 1c9c028", () => {
         a.close();
         const lines = env.audio.lines!;
         const music = intent.length ? intent : lines.filter((l) => /^play\(music\//.test(l)).map((l) => `music:${l.slice(11, -5)}`);
-        return { sfx: lines.filter((l) => INTENDED.audio.sfxLine.test(l)), music, storage: Object.fromEntries(env.store), vol: a.musicVol };
+        return { sfx: synthLines(lines), music, storage: liveStorage(env.store), vol: a.musicVol };
       } finally {
         env.restore();
       }

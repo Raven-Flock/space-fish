@@ -3,7 +3,7 @@
 // synth-SFX call log, music/VO intent, HUD snapshots and storage.
 import { createHash } from "node:crypto";
 import { installEnv, type Env, type EnvOptions } from "./fakeEnv";
-import { MUSIC_KEY } from "../../src/save/keys";
+import { LEVEL_CURVE, LEVEL_CURVE_KEY, MUSIC_KEY } from "../../src/save/keys";
 
 // "raf" is the rAF handle id: live's music fade also drew rAF ids, F-07 fades on the audio clock (SD-12).
 const SKIP = new Set(["raf", "audio", "onSnap", "canvas", "ctx", "unbind", "art", "rim", "cine", "cineVid", "voiceEl", "keys", "qaKeys"]);
@@ -46,8 +46,23 @@ export const INTENDED = {
     sfxLine: /^(osc\.|freq\.|gain\.set\(|gain\.ramp\()/,
     liveMusicDefault: 0.7,
     api: ["suspend", "resume", "setMuted", "loadVo", "preloadVo", "playVo", "stopVo", "dropVo", "crossfadeTo"],
+    /** F-07 v0.2.1: the one-time level-curve flag (live has no such key) */
+    storageKeys: [LEVEL_CURVE_KEY],
   },
 };
+
+/**
+ * The synth-SFX calls of an audio log. F-07 v0.2.1 anchors every level ramp with
+ * setValueAtTime(current, now) right after cancelScheduledValues(now); that `set` is bus
+ * automation, not a tone() cue, so it is dropped (tone() never cancels).
+ */
+export function synthLines(lines: string[]) {
+  return lines.filter((l, i) => INTENDED.audio.sfxLine.test(l) && !(/^gain\.set\(/.test(l) && /^gain\.cancel\(/.test(lines[i - 1] ?? "")));
+}
+/** Storage without the intended new keys (live never writes them). */
+export function liveStorage(store: Map<string, string>) {
+  return Object.fromEntries([...store].filter(([k]) => !INTENDED.audio.storageKeys.includes(k)));
+}
 
 /** music/VO intent from live's HTMLAudio play() lines */
 function liveIntent(lines: string[]) {
@@ -62,6 +77,8 @@ function liveIntent(lines: string[]) {
 /** Our Game with only the intended new entry points turned off: must equal live 1c9c028. */
 export function liveEquivalent<T extends new (...a: any[]) => any>(G: T): T {
   class LiveEquivalent extends G {
+    /** runSim: saved levels count as already migrated (live reads them linearly; F-07 v0.2.1) */
+    static liveLevels = true;
     constructor(...a: any[]) {
       super(...a);
       // F-07: live's Music default (an intended difference, see INTENDED.audio)
@@ -103,6 +120,9 @@ export interface SimOptions extends EnvOptions {
 
 export function runSim(GameClass: any, o: SimOptions) {
   const env = installEnv(o);
+  // F-07 v0.2.1: our director moves saved levels to the v*v curve once; a parity run
+  // starts with that done, so it reads a saved level exactly as live does.
+  if (GameClass.liveLevels) env.store.set(LEVEL_CURVE_KEY, LEVEL_CURVE);
   try {
     const snaps: any[] = [];
     const g = new GameClass((s: any) => snaps.push(s));
@@ -115,7 +135,7 @@ export function runSim(GameClass: any, o: SimOptions) {
       g.audio.crossfadeTo = (n: string) => { intent.push(`music:${n}`); cf(n); };
       g.audio.playVo = (n: string) => { intent.push(`vo:${n}`); vo(n); };
     }
-    const sfx = () => env.audio.lines!.filter((l) => INTENDED.audio.sfxLine.test(l));
+    const sfx = () => synthLines(env.audio.lines!);
     g.attach(env.canvas);
     g.startLoop();
     o.start?.(g, env);
@@ -139,7 +159,7 @@ export function runSim(GameClass: any, o: SimOptions) {
     const final = { f, s: pickState(g), draw: env.draw.digest(), audio: digest };
     g.detach();
     const audioIntent = ours ? intent : liveIntent(env.audio.lines!);
-    return { trace, final, transitions, snaps, audioLog: sfxLog, audioIntent, rawAudio: env.audio.lines, storage: Object.fromEntries(env.store), simSeconds: env.now / 1000 };
+    return { trace, final, transitions, snaps, audioLog: sfxLog, audioIntent, rawAudio: env.audio.lines, storage: liveStorage(env.store), simSeconds: env.now / 1000 };
   } finally {
     env.restore();
   }
