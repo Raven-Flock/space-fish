@@ -1,9 +1,14 @@
 import type { Game } from "../game/Game";
 import { hyp } from "./math";
+// F-02: keys that act (fire, use, throw, step a scene); ignored for 150 ms after a resume
+const ACTION_KEYS = ["Space", "Enter", "KeyE", "KeyQ"];
 export const inputMethods = {
   bindInputs(this: Game) {
     let e = (e) => {
       if (!e.repeat) {
+        if (this.inputLocked() && ACTION_KEYS.includes(e.code)) {
+          return; // F-02: just resumed; this press can't fire, swing, use or throw
+        }
         this.keys.add(e.code);
         ["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(
           e.code,
@@ -11,9 +16,10 @@ export const inputMethods = {
         this.mode === "cutscene" &&
           (e.code === "Space" || e.code === "Enter") &&
           this.advanceBeat();
-        e.code === "Escape" && this.mode === "play"
-          ? ((this.mode = "pause"), this.push(0, true))
-          : e.code === "Escape" && this.mode === "pause" && this.resume();
+        let pauseKey = e.code === "Escape" || e.code === "KeyP";
+        pauseKey && this.mode === "play"
+          ? ((this.mode = "pause"), (this.pauseFrom = "play"), this.onPause(), this.push(0, true))
+          : pauseKey && this.mode === "pause" && this.resume();
         this.mode === "play" &&
           this.phase === "base" &&
           (e.code === "Digit1" && this.selectBuild("gen"),
@@ -40,6 +46,9 @@ export const inputMethods = {
       let n = e.pointerType === "touch" || e.pointerType === "pen";
       if (n) {
         e.preventDefault();
+      }
+      if (this.inputLocked()) {
+        return; // F-02: no shot, tap-to-walk or repair from the tap that resumed
       }
       let t = this.eventToWorld(e);
       if (!t?.inside) {
@@ -241,6 +250,9 @@ export const inputMethods = {
     }
   },
   setFire(this: Game, down) {
+    if (down && this.inputLocked()) {
+      return;
+    }
     this.fireLatch = down;
     if (down) {
       this.tap = null;
@@ -253,10 +265,16 @@ export const inputMethods = {
     this.tap = null;
   },
   pulseUse(this: Game) {
+    if (this.inputLocked()) {
+      return;
+    }
     this.interactPulse = true;
     this.tap = null;
   },
   pulseNoise(this: Game) {
+    if (this.inputLocked()) {
+      return;
+    }
     this.decoyPulse = true;
     this.tap = null;
   },

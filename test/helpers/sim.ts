@@ -56,6 +56,12 @@ function liveIntent(lines: string[]) {
   }
   return out;
 }
+// F-02 touch pause (GD F02-TOUCH-PAUSE-v0.1). Stubbed in parity: the sim freeze, every new
+// way into pause (button, P, gamepad Start, auto-pause), the pause/resume side effects and
+// the 150 ms resume input lock. Esc still pauses and resumes exactly like live.
+INTENDED.methods.push("pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad");
+INTENDED.helpers.push("clearHeldInput", "bindPause", "quitToTitle");
+Object.assign(INTENDED.state, { pauseFrom: "play", resumeLockUntil: 0, padStart: false });
 
 /** Our Game with only the intended new entry points turned off: must equal live 1c9c028. */
 export function liveEquivalent<T extends new (...a: any[]) => any>(G: T): T {

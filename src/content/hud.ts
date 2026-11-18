@@ -14,3 +14,12 @@ export const TITLE_HELP = {
   /** touch (VP) */
   aimTouch: "Hold Fire, then tap to aim.",
 } as const;
+/** F-02 pause copy (VP-PHONE-HUD v0.1.1). Stay is the primary, focused button; no red. */
+export const PAUSE_COPY = {
+  pause: "Pause",
+  confirm: "Leave to the title? This chapter starts over when you continue.",
+  stay: "Stay",
+  leave: "Leave",
+  mute: "Mute",
+  unmute: "Unmute",
+} as const;

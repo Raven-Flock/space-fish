@@ -230,6 +230,13 @@ describe("the parity harness is not vacuous (mutation checks)", () => {
     const o = { seed: 1, frames: 600, sampleEvery: 10, start: (g: any) => g.startPhase("rescue"), step: script };
     expect(() => compare(runSim(live.Game, o), runSim(Game, o))).toThrow();
   });
+  it("F-02: turning only the pause freeze back on differs from live (the script's Esc pause holds the sim still)", () => {
+    class FreezeOn extends Ours {
+      pausedFreeze() { return (Game.prototype as any).pausedFreeze.call(this); }
+    }
+    const o = { seed: 1, frames: 600, sampleEvery: 10, start: (g: any) => g.startPhase("shooter"), step: script };
+    expect(() => compare(runSim(live.Game, o), runSim(FreezeOn, o))).toThrow();
+  });
 });
 
 describe("full run, start to victory (QA autopilot routes)", () => {
