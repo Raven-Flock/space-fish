@@ -9,7 +9,8 @@ export class AudioDirector {
   current = null;
   fadeToken = 0;
   loops = null;
-  /** shovel SFX elements, created on the first cue (not in unlock(), so menus load nothing new) */
+  /** shovel SFX elements, created and loaded once by unlock() (Start/Continue/Retry), so the
+   *  first swing doesn't wait on a fetch; nothing loads before that, so menus load nothing new */
   sfx = null;
   /** next round-robin index per cue */
   sfxNext = { swing: 0, tonk: 0 };
@@ -53,9 +54,30 @@ export class AudioDirector {
     }
     this.ctx?.resume();
     this.ensureLoops();
+    this.primeSfx();
     if (!this.mood) {
       this.setMood("rim");
     }
+  }
+  /**
+   * QA (PR #10 v0.3): prime the shovel SFX at audio unlock, not on the first swing.
+   * Creates the six elements once, at the cue trim, and starts loading them.
+   */
+  primeSfx() {
+    if (this.sfx) {
+      return;
+    }
+    let make = (src) => {
+      let a = new Audio(src);
+      a.preload = "auto";
+      a.volume = SHOVEL_SFX.gain;
+      a.load();
+      return a;
+    };
+    this.sfx = {
+      swing: SHOVEL_SFX.swing.map(make),
+      tonk: SHOVEL_SFX.tonk.map(make),
+    };
   }
   close() {
     if (this.current) {
@@ -154,23 +176,14 @@ export class AudioDirector {
    * (HTMLAudio, like music and voice; the Web Audio move is F-07, a separate PR).
    * Round-robin a/b/c, so a variant never plays twice in a row; +/-3% detune via
    * playbackRate (pitch follows). Plays only once audio is unlocked, like tone().
-   * Reduced motion doesn't change audio.
+   * Every cue plays at SHOVEL_CUE_TRIM (0.53, Sound's level correction), never at the
+   * Music slider. Reduced motion doesn't change audio.
    */
   playSfx(kind) {
     if (!this.ctx) {
       return;
     }
-    if (!this.sfx) {
-      let make = (src) => {
-        let a = new Audio(src);
-        a.preload = "auto";
-        return a;
-      };
-      this.sfx = {
-        swing: SHOVEL_SFX.swing.map(make),
-        tonk: SHOVEL_SFX.tonk.map(make),
-      };
-    }
+    this.primeSfx();
     let list = this.sfx[kind];
     let i = this.sfxNext[kind];
     this.sfxNext[kind] = (i + 1) % list.length;

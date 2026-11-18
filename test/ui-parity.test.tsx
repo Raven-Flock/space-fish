@@ -36,6 +36,7 @@ function setupBrowser(seed: number, w = 1280, h = 800, coarse = false) {
   (window as any).AudioContext = AC;
   window.HTMLMediaElement.prototype.play = function () { return Promise.resolve(); };
   window.HTMLMediaElement.prototype.pause = function () {};
+  window.HTMLMediaElement.prototype.load = function () {};
   (window.HTMLCanvasElement.prototype as any).getContext = function () {
     return new Proxy({}, { get: (_t, k) => (k === "createLinearGradient" || k === "createRadialGradient" ? () => ({ addColorStop() {} }) : k === "measureText" ? () => ({ width: 10 }) : () => {}), set: () => true });
   };
