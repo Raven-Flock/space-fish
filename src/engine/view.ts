@@ -28,7 +28,10 @@ export const viewMethods = {
     };
   },
   updateCam(this: Game) {
-    this.camX = clamp(this.player.x - 480, 0, Math.max(0, this.world.w - 960));
+    // F-04 extend-width stage: the bleed either side of the 960 column shows world too,
+    // so keep the whole visible stage inside the world (b = 0 is the old clamp).
+    let b = bleedOf(this.view);
+    this.camX = clamp(this.player.x - 480, b, Math.max(b, this.world.w - 960 - b));
     this.camY = clamp(this.player.y - 270, 0, Math.max(0, this.world.h - 540));
   },
   eventToWorld(this: Game, ev) {
@@ -53,7 +56,17 @@ export const viewMethods = {
     return {
       x: vx + this.camX,
       y: vy + this.camY,
-      inside: vx >= 0 && vy >= 0 && vx <= 960 && vy <= 540,
+      inside: vx >= -bleedOf(this.view) && vy >= 0 && vx <= 960 + bleedOf(this.view) && vy <= 540,
     };
   },
 };
+
+/**
+ * F-04 extend-width stage (VP-10): logical width is 540 * vw / vh. resize() already puts
+ * the 960 column at ox; when the stage is wider than 16:9 (oy = 0), ox / scale logical
+ * px either side are bleed that backgrounds paint and the controls sit in. Narrower
+ * than 16:9 keeps the old fit (bleed 0). At 960x540 (all parity sims) this is 0.
+ */
+export function bleedOf(view) {
+  return view && view.oy < 0.5 && view.ox > 0 && view.scale > 0 ? view.ox / view.scale : 0;
+}

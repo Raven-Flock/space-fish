@@ -1,5 +1,7 @@
 import type { Game } from "../game/Game";
 import { clamp } from "../engine/math";
+import { bleedOf } from "../engine/view";
+import { drawBleedImage } from "./bleed";
 export const scenesMethods = {
   drawMoonScene(this: Game, e) {
     this.drawScene("walk", e);
@@ -15,18 +17,24 @@ export const scenesMethods = {
     }
     this.camX = 0;
     this.paintSky();
+    // F-04 bleed (VP v0.1.2 §5): backdrops stay centred at their authored 540-tall fit and
+    // paintSky() above already extends the sky and stars across the stage. Jupiter keeps
+    // its authored scale; the ground and the rescue horizon are carried into the bleed
+    // (<= 5% stretch, then mirror-extended with a 48 px blend).
+    let b = bleedOf(this.view);
+    let W = 960 + 2 * b;
     if (
       (e === "jupiter" || e === "victory" || e === "launch") &&
       this.imgOk(this.rim?.jupiter)
     ) {
       ctx.drawImage(this.rim.jupiter, 0, 0, 960, 540);
     } else if (e === "walk" && this.imgOk(this.rim?.ground)) {
-      ctx.drawImage(this.rim.ground, 0, 40, 960, 500);
+      drawBleedImage(ctx, this.rim.ground, null, 0, 40, 960, 500, b);
     } else if (this.imgOk(this.rim?.rescue)) {
-      ctx.drawImage(this.rim.rescue, 0, 160, 960, 380);
+      drawBleedImage(ctx, this.rim.rescue, null, 0, 160, 960, 380, b);
     } else {
       ctx.fillStyle = "#1a242c";
-      ctx.fillRect(0, 300, 960, 240);
+      ctx.fillRect(0 - b, 300, W, 240);
       ctx.fillStyle = "#24303a";
       ctx.fillRect(80, 250, 220, 70);
       ctx.fillRect(340, 230, 160, 90);

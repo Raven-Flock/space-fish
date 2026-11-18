@@ -2,8 +2,12 @@
 // Parity for the React shell vs live 1c9c028: same pre-rendered markup, and the same DOM
 // after every step of a scripted session (title, intro, HUD per phase, pause, credits,
 // death, build bar), with the game loop driven by a fake clock. Our session runs with
-// INTENDED's entry points stubbed; the F-02 controls are stripped (withoutF02) and the
-// real pause UI is asserted in touch-pause-ui.test.tsx.
+// F-02's entry points stubbed; the F-02 controls are stripped (withoutF02) and the real
+// pause UI is asserted in touch-pause-ui.test.tsx.
+// F-04 intended difference: the in-play HUD subtree (header card, REPAIR bar, touch
+// controls) is replaced by the phone HUD. Both HUDs are cut out before the DOM compare,
+// and the values they show (phase, objective, HP, scrap, counts, kits, boss, buttons)
+// are compared separately, so everything outside the HUD must still match exactly.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { act, createElement } from "react";
@@ -12,7 +16,7 @@ import { renderToString } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { Root } from "../src/app/SpaceFishApp";
 import { HUD_HINT, TITLE_HELP } from "../src/content/hud";
-import { HUD_TIMING } from "../src/content/tuning/hud";
+import { HUD, HUD_TIMING } from "../src/content/tuning/hud";
 import { Game } from "../src/game/Game";
 import { mulberry32 } from "./helpers/fakeEnv";
 import { REPO_ROOT, loadLive } from "./helpers/liveOracle";
@@ -127,16 +131,19 @@ const COPY: Array<[string, string]> = [
     'aria-label="Music volume" style="width: 9rem; accent-color: rgb(212, 162, 74);" type="range" value="0.7"',
     'aria-label="Music volume" style="width: 9rem; accent-color: rgb(212, 162, 74);" type="range" value="0.8"',
   ],
+  // F-04 (VP-11): the cutscene caption + Skip row keeps max(12px, safe-area inset) margins
+  [
+    'class="pointer-events-auto m-3 flex items-end justify-between gap-3 sm:m-4"',
+    'class="pointer-events-auto m-3 flex items-end justify-between gap-3 sm:m-4 sf-safe sf-cutrow"',
+  ],
 ];
 /**
  * F-02 touch pause: the new controls (Pause button, Mute toggle) carry data-f02 and are
- * removed from our DOM before comparing, and the header's right padding that keeps the
- * Pause button 8 px clear is dropped. Each must actually appear, so a stale rule fails.
+ * removed from our DOM before comparing. Each must actually appear, so a stale rule fails.
+ * (F-04 removed the header card, so F-02's header padding is gone with it.)
  */
 function withoutF02(s: string, seen: Set<string>) {
-  return s
-    .replace(/<button[^>]*data-f02="(pause|mute)"[^>]*>.*?<\/button>/g, (_m, k) => { seen.add(k); return ""; })
-    .replace(/<header class="([^"]*)" style="padding-right:[^"]*">/g, (_m, c) => { seen.add("header"); return `<header class="${c}">`; });
+  return s.replace(/<button[^>]*data-f02="(pause|mute)"[^>]*>.*?<\/button>/g, (_m, k) => { seen.add(k); return ""; });
 }
 /** F-02's stubbed entry points (see INTENDED in helpers/sim.ts). */
 const F02_METHODS = ["pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad"];
@@ -155,6 +162,85 @@ async function intendedOff<T>(fn: () => Promise<T>): Promise<T> {
   } finally {
     for (const [m, f] of saved) proto[m] = f;
   }
+}
+
+// F-04: live's in-play HUD (replaced) and ours (data-hud-root). Each selector is matched
+// against real markup, so a stale one shows up as "never used".
+const LIVE_HUD = [
+  "header", // the header card (VP-09: "the old header card goes")
+  "main > div.overflow-x-auto.border-t", // the REPAIR bar under the canvas (now an overlay tray)
+  'main > div[style*="z-index: 30"]', // the touch controls (now the F-04 layout)
+];
+const OUR_HUD = ["[data-hud-root]"];
+function parse(html: string) {
+  const t = document.createElement("template");
+  t.innerHTML = html;
+  return t.content;
+}
+function cutHud(snap: string, sels: string[], used: Set<string>) {
+  const nl = snap.indexOf("\n");
+  if (nl < 0) return snap;
+  const root = parse(snap.slice(nl + 1));
+  for (const sel of sels) {
+    const found = [...root.querySelectorAll(sel)];
+    if (found.length) used.add(sel);
+    for (const el of found) el.remove();
+  }
+  const t = document.createElement("div");
+  t.appendChild(root);
+  return snap.slice(0, nl + 1) + t.innerHTML;
+}
+const txt = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, " ").trim() ?? null;
+function hudValues(snap: string, ours: boolean) {
+  const nl = snap.indexOf("\n");
+  const root = parse(snap.slice(nl + 1));
+  const buttons = (sel: string) => [...root.querySelectorAll(`${sel} button`)].map((b) => txt(b)).sort();
+  if (ours) {
+    const base = root.querySelector('[data-hud="base"]');
+    return {
+      phase: txt(root.querySelector('[data-hud="hp"] .sf-tag')),
+      objective: root.querySelector('[data-hud="objective"]')?.getAttribute("title") ?? null,
+      hp: (root.querySelector(".sf-hpfill") as HTMLElement | null)?.style.width ?? null,
+      alert: !!root.querySelector(".sf-alert"),
+      scrap: base ? txt(base.firstElementChild) : null,
+      counts: base ? [...base.querySelectorAll(".sf-ico + span")].map(txt) : null,
+      kits: txt(root.querySelector('[data-hud="kits"]')),
+      boss: (root.querySelector(".sf-boss-fill") as HTMLElement | null)?.style.width ?? null,
+      touch: buttons('[data-hud-root="controls"]'),
+      tray: buttons('[data-hud-root="tray"]'),
+    };
+  }
+  const head = root.querySelector("header");
+  const card = head?.children[1];
+  const isBase = card && txt(card)?.startsWith("Scrap");
+  const m = isBase ? txt(card.children[1])?.match(/Power (\d+) · Turrets (\d+)\/2 · Lab (\d+)/) : null;
+  const bossBar = !isBase ? (card?.querySelector(".bg-primary") as HTMLElement | null) : null;
+  return {
+    phase: txt(head?.querySelector("p.font-display")),
+    objective: txt(head?.querySelector("p.mt-2")) || null,
+    hp: (head?.querySelector(".bg-danger") as HTMLElement | null)?.style.width ?? null,
+    alert: !!head?.querySelector(".text-danger"),
+    scrap: isBase ? txt(card.children[0]) : null,
+    counts: m ? [m[1], `${m[2]}/2`, m[3]] : null,
+    kits: !isBase && card ? txt(card.querySelector("p")) : null,
+    boss: bossBar?.style.width ?? null,
+    touch: buttons('main > div[style*="z-index: 30"]'),
+    tray: buttons("main > div.overflow-x-auto.border-t"),
+  };
+}
+// the same values, with the F-04 per-phase rules applied to live's (VP rule 7: no Use in
+// Transit; the objective one-liner yields to the boss bar, its toast already showed it)
+function expectSameHud(live: string, ours: string) {
+  const a = hudValues(live, false);
+  const b = hudValues(ours, true);
+  if (a.phase == null) {
+    expect(b.phase).toBeNull();
+    return;
+  }
+  const want = { ...a };
+  if (a.phase === "Transit") want.touch = a.touch.filter((x) => x !== "Use");
+  if (a.boss != null) want.objective = null;
+  expect(b).toEqual(want);
 }
 function withCopy(s: string, used: Set<number>, coarse = false) {
   COPY.forEach(([from, to], i) => {
@@ -190,6 +276,11 @@ function withTouch(s: string, used: Set<number>) {
   return s;
 }
 const textOf = (html: string) => html.replace(/<[^>]*>/g, " ");
+// COPY ids each session must use. 10-12 rewrite live's touch hint and Use button, which
+// sit inside the cut HUD: they still have to match live's markup (so a stale rule fails),
+// and F-04's own hint line is checked below and in phone-hud-ui.test.tsx.
+const USED_DESKTOP = [0, 1, 2, 3];
+const USED_PHONE = [0, 1, 2, 3, 10, 11, 12, 13];
 
 describe("React shell matches live 1c9c028 (plus intended copy changes)", () => {
   it("server markup equals live, and both index.html files ship the matching pre-render (QA N-4, #418)", () => {
@@ -207,28 +298,27 @@ describe("React shell matches live 1c9c028 (plus intended copy changes)", () => 
     expect(srcIndex).toContain(`<div id="root" style="display: contents">${b}</div>`);
   });
 
-  it("desktop session: same DOM after every step", async () => {
-    const a = await session(live.Root);
-    const b = await intendedOff(() => session(Root, false, true));
-    const used = new Set<number>();
-    const seen = new Set<string>();
-    expect(b[1]).toBe("qa-hook function menu function");
-    expect(b.length).toBe(a.length);
-    for (let i = 0; i < a.length; i++) expect(withoutF02(b[i], seen)).toBe(withCopy(a[i], used));
-    expect([...used].sort()).toEqual([0, 1, 2]);
-    expect([...seen].sort()).toEqual(["header", "mute", "pause"]);
-  });
-
-  it("phone (coarse pointer) session: same DOM after every step", async () => {
-    const a = await session(live.Root, true);
-    const b = await intendedOff(() => session(Root, true, true));
-    const used = new Set<number>();
-    const seen = new Set<string>();
-    expect(b.length).toBe(a.length);
-    for (let i = 0; i < a.length; i++) expect(withoutF02(b[i], seen)).toBe(withCopy(a[i], used, true));
-    expect([...used].sort((x, y) => x - y)).toEqual([0, 1, 2, 10, 11, 12, 13]);
-    expect([...seen].sort()).toEqual(["header", "mute", "pause"]);
-  });
+  for (const coarse of [false, true]) {
+    it(`${coarse ? "phone (coarse pointer)" : "desktop"} session: same DOM after every step outside the HUD, same HUD values`, async () => {
+      const a = await session(live.Root, coarse);
+      const b = await intendedOff(() => session(Root, coarse, true));
+      const used = new Set<number>();
+      const seen = new Set<string>();
+      const cutLive = new Set<string>();
+      const cutOurs = new Set<string>();
+      if (!coarse) expect(b[1]).toBe("qa-hook function menu function");
+      expect(b.length).toBe(a.length);
+      for (let i = 0; i < a.length; i++) {
+        expect(cutHud(withoutF02(b[i], seen), OUR_HUD, cutOurs)).toBe(cutHud(withCopy(a[i], used, coarse), LIVE_HUD, cutLive));
+        expectSameHud(a[i], b[i]);
+      }
+      expect([...used].sort((x, y) => x - y)).toEqual(coarse ? USED_PHONE : USED_DESKTOP);
+      expect([...seen].sort()).toEqual(["mute", "pause"]);
+      expect([...cutOurs]).toEqual(OUR_HUD);
+      // the REPAIR bar and the touch controls only exist in some sessions
+      expect([...cutLive].sort()).toEqual((coarse ? LIVE_HUD : LIVE_HUD.slice(0, 2)).slice().sort());
+    });
+  }
 
   it("no 'walk' anywhere in Transit (desktop and phone), and Use is hidden there on a phone", async () => {
     for (const coarse of [false, true]) {
@@ -240,9 +330,9 @@ describe("React shell matches live 1c9c028 (plus intended copy changes)", () => 
         expect(t).not.toMatch(/>Use<\/button>/);
       }
       if (coarse) {
-        expect(transit.every((t) => t.includes(esc(HUD_HINT.touchTransit)))).toBe(true);
+        // (the hint strings themselves: the phone hint tests below; the objective toast
+        // holds the one hint line in these snapshots)
         expect(b.find((t) => t.startsWith("rescue HUD\n"))).toMatch(/>Use<\/button>/);
-        expect(b.find((t) => t.startsWith("stealth HUD\n"))).toContain(HUD_HINT.touchWalk);
       }
     }
   });
@@ -259,78 +349,82 @@ describe("React shell matches live 1c9c028 (plus intended copy changes)", () => 
     expect(TITLE_HELP.aimDesktop).toBe(LIVE_TITLE_AIM);
   });
 
-  it("phone Transit hint: shown, then faded (300 ms, aria-hidden) after Fire is held 2 s in total, before the 8 s cap", async () => {
+  // v0.3's hint rules, on F-04's single hint line ([data-hud="hint"], sf-on while shown;
+  // the objective toast takes the line for its first 2.5 s, VP "one hint line at a time")
+  async function phoneRun(phase: string | null) {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const b = setupBrowser(42, 844, 390, true);
     const host = document.createElement("div");
     document.body.innerHTML = "";
     document.body.appendChild(host);
     const root = createRoot(host);
     const proto = HTMLElement.prototype as any;
-    const hadCapture = proto.setPointerCapture;
+    const had = [proto.setPointerCapture, proto.releasePointerCapture];
     proto.setPointerCapture = () => {};
     proto.releasePointerCapture = () => {};
+    await act(async () => { root.render(createElement(Root)); });
+    if (phase) history.replaceState(null, "", `/space-fish/?phase=${phase}`);
+    const btn = (text: string) => [...host.querySelectorAll("button")].find((x) => x.textContent?.trim() === text)!;
+    b.frames(2);
+    act(() => { btn("Start").click(); });
+    b.frames(30);
+    if (!phase) { act(() => { btn("Skip").click(); }); b.frames(30); }
+    act(() => { vi.advanceTimersByTime(HUD.toastMs + 10); });
+    b.frames(2);
+    const hint = () => host.querySelector('[data-hud="hint"]') as HTMLElement;
+    const shown = (text: string) => hint().classList.contains("sf-on") && hint().textContent === text;
+    const done = () => {
+      vi.useRealTimers();
+      [proto.setPointerCapture, proto.releasePointerCapture] = had;
+      history.replaceState(null, "", "/space-fish/");
+      act(() => root.unmount());
+    };
+    return { b, host, btn, hint, shown, done };
+  }
+
+  it("phone Transit hint: shown, then faded (aria-hidden) after Fire is held 2 s in total, before the 8 s cap", async () => {
+    const r = await phoneRun("shooter");
     try {
-      await act(async () => { root.render(createElement(Root)); });
-      history.replaceState(null, "", "/space-fish/?phase=shooter");
-      b.frames(2);
-      const btn = (text: string) => [...host.querySelectorAll("button")].find((x) => x.textContent?.trim() === text)!;
-      act(() => { btn("Start").click(); });
-      b.frames(30);
-      const hint = () => [...host.querySelectorAll("p")].find((p) => p.textContent === HUD_HINT.touchTransit)!;
-      expect(hint().style.opacity).toBe("1");
-      expect(hint().style.transition).toBe(`opacity ${HUD_TIMING.hintFadeMs}ms`);
+      expect(r.shown(HUD_HINT.touchTransit)).toBe(true);
       const fire = (type: string) => {
         const e = new MouseEvent(type, { bubbles: true, cancelable: true });
         Object.defineProperty(e, "pointerId", { value: 1 });
-        act(() => { btn("Fire").dispatchEvent(e); });
+        act(() => { r.btn("Fire").dispatchEvent(e); });
       };
-      // 1.2 s held, released 1 s, then 0.9 s more: 2.1 s in total, 3.1 s into Transit
-      fire("pointerdown"); b.frames(72); fire("pointerup");
-      b.frames(60);
-      expect(hint().style.opacity).toBe("1");
-      fire("pointerdown"); b.frames(54); fire("pointerup");
-      b.frames(10);
-      expect(hint().style.opacity).toBe("0");
-      expect(hint().getAttribute("aria-hidden")).toBe("true");
+      // 1.2 s held, released 1 s, then 0.9 s more: 2.1 s in total, well before 8 s of play
+      fire("pointerdown"); r.b.frames(72); fire("pointerup");
+      r.b.frames(60);
+      expect(r.shown(HUD_HINT.touchTransit)).toBe(true);
+      fire("pointerdown"); r.b.frames(54); fire("pointerup");
+      r.b.frames(10);
+      expect(r.hint().classList.contains("sf-on")).toBe(false);
+      expect(r.hint().getAttribute("aria-hidden")).toBe("true");
     } finally {
-      proto.setPointerCapture = hadCapture;
-      history.replaceState(null, "", "/space-fish/");
-      act(() => root.unmount());
+      r.done();
     }
   });
 
   it("phone: the walk hint hides after the first stick move of 0.4 s or longer (VP-08), not after a shorter one", async () => {
     const run = async (holdMs: number) => {
-      const b = setupBrowser(42, 844, 390, true);
-      const host = document.createElement("div");
-      document.body.innerHTML = "";
-      document.body.appendChild(host);
-      const root = createRoot(host);
-      await act(async () => { root.render(createElement(Root)); });
-      const click = (text: string) => {
-        const btn = [...host.querySelectorAll("button")].find((x) => x.textContent?.trim() === text)!;
-        act(() => { btn.click(); });
-      };
-      b.frames(2); click("Start"); b.frames(30); click("Skip"); b.frames(30);
-      expect(host.textContent).toContain(HUD_HINT.touchWalk);
-      const stick = host.querySelector('div[style*="width: 148px"]') as HTMLElement;
-      stick.getBoundingClientRect = () => ({ left: 0, top: 0, width: 148, height: 148, right: 148, bottom: 148, x: 0, y: 0, toJSON() {} }) as DOMRect;
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const r = await phoneRun(null);
       try {
+        expect(r.shown(HUD_HINT.touchWalk)).toBe(true);
+        const stick = r.host.querySelector('[data-hud="stick"]') as HTMLElement;
+        stick.getBoundingClientRect = () => ({ left: 0, top: 0, width: 148, height: 148, right: 148, bottom: 148, x: 0, y: 0, toJSON() {} }) as DOMRect;
         const ev = (type: string, x: number) => {
           const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: 74 });
           Object.defineProperty(e, "pointerId", { value: 1 });
           act(() => { stick.dispatchEvent(e); });
         };
-        ev("pointerdown", 140);
+        ev("pointerdown", 74);
+        ev("pointermove", 140);
         act(() => { vi.advanceTimersByTime(holdMs); });
         ev("pointerup", 140);
         act(() => { vi.advanceTimersByTime(1000); });
-        b.frames(10);
-        return host.textContent!.includes(HUD_HINT.touchWalk);
+        r.b.frames(10);
+        return r.shown(HUD_HINT.touchWalk);
       } finally {
-        vi.useRealTimers();
-        act(() => root.unmount());
+        r.done();
       }
     };
     expect(await run(399)).toBe(true);

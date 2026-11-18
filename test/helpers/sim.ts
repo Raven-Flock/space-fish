@@ -79,6 +79,9 @@ function liveIntent(lines: string[]) {
 INTENDED.methods.push("pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad");
 INTENDED.helpers.push("clearHeldInput", "bindPause", "quitToTitle");
 Object.assign(INTENDED.state, { pauseFrom: "play", resumeLockUntil: 0, padStart: false });
+// F-04 phone HUD (VP-PHONE-HUD-v0.1 + v0.1.2): setStickGuard, the Transit ship clamp behind
+// the phone stick, which only the touch HUD calls.
+INTENDED.methods.push("setStickGuard");
 
 /** Our Game with only the intended new entry points turned off: must equal live 1c9c028. */
 export function liveEquivalent<T extends new (...a: any[]) => any>(G: T): T {
