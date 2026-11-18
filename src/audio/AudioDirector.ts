@@ -78,6 +78,13 @@ export class AudioDirector {
   vo: any = null;
   voToken = 0;
   voGen = 0;
+  /**
+   * F-05 load order (WP 4). While set, a track's first fetch waits for this promise (the
+   * beat-1 plate and the opening VO are in). While groupHeld, only the loop that plays is
+   * fetched; the rest of its decode group waits for releaseGroup(). Null/false = as F-07.
+   */
+  musicGate: Promise<unknown> | null = null;
+  groupHeld = false;
   private broken = false;
   private armed = false;
   private off: Array<() => void> = [];
@@ -355,6 +362,18 @@ export class AudioDirector {
     });
   }
 
+  /** F-05: fetch a file's bytes ahead of time (cached; decoded later by loadMusic/loadVo). */
+  prefetch(url: string) {
+    return this.fetchBytes(url);
+  }
+
+  /** F-05: plates 2-6 are in: fetch the rest of the current chapter's decode group. */
+  releaseGroup() {
+    if (!this.groupHeld) return;
+    this.groupHeld = false;
+    if (this.want) for (const c of this.musicGroup()) this.loadMusic(c);
+  }
+
   /** Decode one music loop and work out its sample-exact loop points. */
   loadMusic(name: string) {
     let p = this.music.get(name);
@@ -428,10 +447,15 @@ export class AudioDirector {
   private startTrack(name: string, fade: number) {
     const token = ++this.fadeToken;
     if (name !== "swarm") this.chapter = name;
-    for (const c of this.musicGroup()) this.loadMusic(c);
-    this.loadMusic(name).then((d) => {
-      if (d && token === this.fadeToken && this.want === name && this.ctx && this.bus) this.playTrack(name, d, fade);
-    });
+    const go = () => {
+      if (!this.groupHeld) for (const c of this.musicGroup()) this.loadMusic(c);
+      this.loadMusic(name).then((d) => {
+        if (d && token === this.fadeToken && this.want === name && this.ctx && this.bus) this.playTrack(name, d, fade);
+      });
+    };
+    // F-05 (WP 4): the intro's loop waits for the beat-1 plate + opening VO
+    if (this.musicGate) this.musicGate.then(go);
+    else go();
   }
 
   private gainAt(t: any, now: number) {

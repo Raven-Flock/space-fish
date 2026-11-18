@@ -19,6 +19,7 @@ declare global {
       pulseShot?: () => void;
       bullet?: () => { vx: number; vy: number } | null;
       wrecks?: () => Array<{ kind: string; repaired: boolean }>;
+      beatLog?: () => Array<{ t: number; ev: string; beat: number | null; plate: string | null }>;
     };
     /** Set by the inline boot script in index.html (Pages base path). */
     __SF_BASEPATH?: string;

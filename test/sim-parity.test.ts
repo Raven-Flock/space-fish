@@ -226,6 +226,14 @@ describe("the parity harness is not vacuous (mutation checks)", () => {
     const o = { seed: 1, frames: 600, sampleEvery: 10, start: (g: any) => g.startPhase("stealth"), step: script };
     expect(() => compare(runSim(live.Game, o), runSim(Game, o))).toThrow();
   });
+  it("F-05: the real Game differs from live where intended: a plate that never arrives holds beat 1 (until the 12 s cap)", () => {
+    class NoPlates extends Game {
+      requestPlate() {}
+    }
+    const o = { seed: 5, frames: 900, start: (g: any) => g.startNew() };
+    expect(() => compare(runSim(live.Game, o), runSim(NoPlates, o))).toThrow();
+    expect(runSim(NoPlates, o).transitions.map((t) => t.k)).toEqual(["cutscene:stealth:intro"]);
+  });
   it("the real Game (fixes on) differs from live where intended: a Use away from interactables swings", () => {
     const o = { seed: 1, frames: 600, sampleEvery: 10, start: (g: any) => g.startPhase("rescue"), step: script };
     expect(() => compare(runSim(live.Game, o), runSim(Game, o))).toThrow();
