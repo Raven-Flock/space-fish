@@ -44,6 +44,7 @@ function setupBrowser(seed: number, w = 1280, h = 800, coarse = false) {
   (window as any).AudioContext = AC;
   window.HTMLMediaElement.prototype.play = function () { return Promise.resolve(); };
   window.HTMLMediaElement.prototype.pause = function () {};
+  window.HTMLMediaElement.prototype.load = function () {};
   // F-05: images "load" at once (a fast link), so the intro plate gate never holds a beat here;
   // the gate itself is covered in intro-load*.test.*. Live's drawImage calls go to a no-op canvas.
   Object.defineProperty(window.HTMLImageElement.prototype, "complete", { get: () => true, configurable: true });
