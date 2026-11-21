@@ -1,4 +1,5 @@
 import type { Game } from "../game/Game";
+import { SHOVEL } from "../content/tuning/shovel";
 export const groundMethods = {
   drawGround(this: Game) {
     let ctx = this.ctx;
@@ -205,6 +206,7 @@ export const groundMethods = {
       }
       this.drawHeldTool(ctx);
     }
+    this.drawShovelTrail(ctx);
     if (this.weapon === "laser" && this.phase !== "shooter") {
       this.drawAim(ctx);
     }
@@ -615,6 +617,25 @@ export const groundMethods = {
       ctx.fillStyle = "#d4a24a";
       ctx.fillRect(14, -5, 6, 2);
     }
+    ctx.restore();
+  },
+  // D-11 shovel: brass arc trail over the 100° reach during wind-up and the hit
+  // window. Player-side colour only (never teal or magenta). Off with reduced motion.
+  drawShovelTrail(this: Game, ctx) {
+    let s = this.swing;
+    if (!s || this.reduce) {
+      return;
+    }
+    let half = (SHOVEL.arcDeg * Math.PI) / 360;
+    let k = Math.min(1, s.t / (SHOVEL.windup + SHOVEL.active));
+    ctx.save();
+    ctx.globalAlpha = 0.85 * (1 - k * 0.6);
+    ctx.strokeStyle = SHOVEL.trailColor;
+    ctx.lineWidth = 4;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(this.player.x, this.player.y, SHOVEL.reach - 8, s.ang - half, s.ang - half + half * 2 * Math.max(0.15, k));
+    ctx.stroke();
     ctx.restore();
   },
   drawAim(this: Game, ctx) {

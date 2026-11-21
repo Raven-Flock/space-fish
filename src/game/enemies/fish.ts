@@ -18,9 +18,12 @@ export const fishMethods = {
   tickFish(this: Game, dt, sneaking) {
     for (let n of this.fish) {
       if (n.hp > 0) {
-        this.phase === "stealth"
-          ? this.steerStealth(n, dt, sneaking)
-          : this.steerCombat(n, dt);
+        // a shovel-staggered fish neither moves nor chases (D-11)
+        if (!(n.stagger > 0)) {
+          this.phase === "stealth"
+            ? this.steerStealth(n, dt, sneaking)
+            : this.steerCombat(n, dt);
+        }
         if (
           hyp(n.x - this.player.x, n.y - this.player.y) < FISH.contactRadius &&
           this.invuln <= 0
@@ -51,6 +54,11 @@ export const fishMethods = {
     }
   },
   steerStealth(this: Game, fish, dt, sneaking) {
+    // F-01 (GD ruling): a fish in search walks to the last-seen spot and skips
+    // its sight check, so it never refreshes the alert (the alert runs down as usual)
+    if (this.fishSearch(fish, dt)) {
+      return;
+    }
     if (this.fishSees(fish, sneaking)) {
       this.alert = FISH.alertTime;
       this.lastSeen = {
@@ -66,7 +74,7 @@ export const fishMethods = {
     if (this.alert > 0) {
       tx = this.lastSeen.x;
       ty = this.lastSeen.y;
-      speed = FISH.chaseSpeed;
+      speed = this.rimChaseSpeed();
     } else if (
       this.decoy &&
       hyp(this.decoy.x - fish.x, this.decoy.y - fish.y) < FISH.decoyPullRange
@@ -79,6 +87,31 @@ export const fishMethods = {
     if (this.alert <= 0 && !this.decoy && hyp(tx - fish.x, ty - fish.y) < 10) {
       fish.wi = (fish.wi + 1) % Math.max(1, fish.wps.length);
     }
+  },
+  /** Rim chase speed, from content/tuning/fish.ts (F-01: 140, live 1c9c028 was 160). */
+  rimChaseSpeed(this: Game) {
+    return FISH.chaseSpeed;
+  },
+  /**
+   * F-01 search state (GD ruling, Nov 18): returns false when the fish isn't searching.
+   * Otherwise it walks toward the last-seen spot at patrol speed capped at
+   * FISH.searchSpeedCap, does no sight check and doesn't chase, and returns true.
+   * The timer itself runs in tickShovel().
+   */
+  fishSearch(this: Game, fish, dt) {
+    if (!(fish.search > 0)) {
+      return false;
+    }
+    let speed = Math.min(FISH.patrolSpeed, FISH.searchSpeedCap);
+    let d = hyp(this.lastSeen.x - fish.x, this.lastSeen.y - fish.y);
+    if (d <= speed * dt) {
+      // arrived: stand on the spot, keep looking the way it came
+      fish.x = this.lastSeen.x;
+      fish.y = this.lastSeen.y;
+    } else {
+      this.stepToward(fish, this.lastSeen.x, this.lastSeen.y, speed, dt);
+    }
+    return true;
   },
   fishSees(this: Game, fish, sneaking) {
     let dx = this.player.x - fish.x;

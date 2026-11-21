@@ -13,7 +13,8 @@ import { stickOut } from "../src/app/controls";
 import { AudioDirector } from "../src/audio/AudioDirector";
 import { Game } from "../src/game/Game";
 import { mulberry32, installEnv } from "./helpers/fakeEnv";
-import { REPO_ROOT, LIVE_CHUNK, loadLive } from "./helpers/liveOracle";
+import { REPO_ROOT, LIVE_CHUNK, loadLive, liveModuleSource } from "./helpers/liveOracle";
+import { INTENDED } from "./helpers/sim";
 
 let live: any;
 beforeAll(async () => {
@@ -32,7 +33,7 @@ function walk(dir: string, out: string[] = []) {
 const SOURCES = walk(SRC).filter((f) => /\.(ts|tsx)$/.test(f));
 const read = (f: string) => readFileSync(f, "utf8");
 
-describe("constant tables equal live 69cf5be", () => {
+describe("constant tables equal live 1c9c028", () => {
   it("cutscene script (beats, durations, captions, plates, voice files)", () => {
     expect(CUTSCENES).toEqual(live.CUTSCENES);
   });
@@ -61,6 +62,8 @@ describe("constant tables equal live 69cf5be", () => {
       const env = installEnv({ seed: 1, storage: { "spacefish-music": "0.4" } });
       try {
         const a = new A();
+        // v0.3.1: priming the shovel SFX at unlock is intended (INTENDED.audioMethods); live has no shovel files
+        for (const m of INTENDED.audioMethods) if (typeof a[m] === "function") a[m] = () => {};
         a.unlock();
         for (const m of ["stealth", "alert", "rescue", "base", "shooter", "swarm", "ending", "menu"]) {
           a.setMood(m);
@@ -78,6 +81,21 @@ describe("constant tables equal live 69cf5be", () => {
   });
 });
 
+describe("the oracle is the exact live bundle (mutation checks)", () => {
+  it("refuses any other bytes, even one changed character", () => {
+    const src = read(LIVE_CHUNK);
+    expect(() => liveModuleSource(src)).not.toThrow();
+    const i = src.indexOf("chaseSpeed:160");
+    expect(i).toBeGreaterThan(0);
+    expect(() => liveModuleSource(src.slice(0, i) + "chaseSpeed:161" + src.slice(i + 14))).toThrow(/live bundle changed/);
+    expect(() => liveModuleSource(src + " ")).toThrow(/live bundle changed/);
+  });
+  it("live index.html loads exactly this bundle", () => {
+    const html = read(join(REPO_ROOT, "index.html"));
+    expect(html).toContain('src="./assets/index-9xaohcOn.js"');
+  });
+});
+
 describe("assets", () => {
   const assetRefs = (code: string) =>
     new Set(
@@ -90,7 +108,7 @@ describe("assets", () => {
     expect([...ours].sort()).toEqual([...liveRefs].sort());
   });
   it("every served static file still exists at the repo root (Pages path unchanged)", () => {
-    for (const p of ["index.html", "404.html", "sw.js", "favicon.svg", "og.jpg", ".nojekyll", "music/rim.mp3", "opening/dig.jpg", "rim/ground.jpg", "sprites/ship-1.png", "assets/routes-NYJyl2-8.js", "assets/index-CMaL7jzG.js", "assets/styles-dG0gngO-.css"]) {
+    for (const p of ["index.html", "404.html", "sw.js", "favicon.svg", "og.jpg", ".nojekyll", "music/rim.mp3", "opening/dig.jpg", "rim/ground.jpg", "sprites/ship-1.png", "assets/index-9xaohcOn.js", "assets/index-BVrj-_zV.css"]) {
       expect(existsSync(join(REPO_ROOT, p)), p).toBe(true);
     }
   });
@@ -130,8 +148,8 @@ describe("GD structure rules (MODULE-STRUCTURE-v0.1)", () => {
     const protoNames = (C: any) => Object.getOwnPropertyNames(C.prototype).sort();
     expect(protoNames(Game)).toEqual(expect.arrayContaining(protoNames(live.Game)));
     const extra = protoNames(Game).filter((n) => !protoNames(live.Game).includes(n));
-    // new names only come from splitting tickShooter / the Eye spawn into modules
-    expect(extra.sort()).toEqual(["collectKits", "driftTransitFish", "fireShipGuns", "moveShip", "spawnEye", "tickEye", "tickTransitSpawns"]);
+    // the only new methods are this PR's intended ones (touch-aim fix, D-11 shovel)
+    expect(extra.sort()).toEqual([...INTENDED.methods, ...INTENDED.helpers].sort());
   });
   it("randomness goes through engine/rng.ts only", () => {
     for (const f of SOURCES.filter((f) => rel(f) !== "engine/rng.ts")) {

@@ -8,6 +8,7 @@ import { viewMethods } from "../engine/view";
 import { inputMethods } from "../engine/input";
 import { playerMethods } from "./player";
 import { weaponsMethods } from "./weapons";
+import { shovelMethods } from "./shovel";
 import { projectilesMethods } from "./projectiles";
 import { particlesMethods } from "./particles";
 import { holdoutsMethods } from "./holdouts";
@@ -63,6 +64,12 @@ export class Game {
   weapon = "shovel";
   fireCd = 0;
   shovelT = 0;
+  /** D-11 shovel melee: the swing in progress, its cooldown, and hit-stop left */
+  swing = null;
+  swingCd = 0;
+  hitStop = 0;
+  /** VP Transit touch hint: { t, fire, done } once Transit has run this run, else null */
+  transitHint = null;
   alert = 0;
   alerted = false;
   lastSeen = {
@@ -218,6 +225,12 @@ export class Game {
       this.push(dt);
       return;
     }
+    if (this.hitStop > 0) {
+      // shovel hit-stop (60 ms, never with reduced motion): the sim holds still
+      this.hitStop = Math.max(0, this.hitStop - dt);
+      this.push(dt);
+      return;
+    }
     let wish = this.wish();
     if (wish.mag > 0.1) {
       this.lastYaw = Math.atan2(-wish.x, -wish.y);
@@ -329,6 +342,7 @@ type Methods = typeof arcadeMethods &
   typeof inputMethods &
   typeof playerMethods &
   typeof weaponsMethods &
+  typeof shovelMethods &
   typeof projectilesMethods &
   typeof particlesMethods &
   typeof holdoutsMethods &
@@ -354,6 +368,7 @@ installMethods(
   inputMethods,
   playerMethods,
   weaponsMethods,
+  shovelMethods,
   projectilesMethods,
   particlesMethods,
   holdoutsMethods,

@@ -54,10 +54,12 @@ export const playerMethods = {
     if (firing && this.fireCd <= 0) {
       this.shootGround();
     }
+    this.tickShovel(dt);
     this.tickFish(dt, sneaking);
     this.tickBullets(dt);
     this.tickNodes();
     this.tickStructures(dt);
+    let used = false;
     if (this.phase === "stealth") {
       if (
         hyp(this.player.x - this.cache.x, this.player.y - this.cache.y) < 46
@@ -65,7 +67,7 @@ export const playerMethods = {
         this.beginCutscene("arm");
       }
     } else if (this.phase === "rescue" && usePressed) {
-      this.tryFree();
+      used = this.tryFree();
     } else if (
       this.phase === "base" &&
       usePressed &&
@@ -73,6 +75,11 @@ export const playerMethods = {
       hyp(this.player.x - this.pad.x, this.player.y - this.pad.y) < 78
     ) {
       this.beginCutscene("launch");
+      used = true;
+    }
+    // D-11: Use that did nothing else swings the shovel (gated: nothing interactable within 40 px)
+    if (usePressed && !used && this.mode === "play") {
+      this.tryShovel();
     }
     if (this.alert > 0) {
       this.alert -= dt;

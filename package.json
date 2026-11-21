@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0-r0",
   "type": "module",
-  "description": "Spacefish editable source (R0 parity rebuild of live 69cf5be).",
+  "description": "Spacefish editable source (parity-tested against the live build, main 1c9c028).",
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/copy-static.mjs && node scripts/check-dist.mjs",

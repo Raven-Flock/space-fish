@@ -1,7 +1,9 @@
 name: ci
 
-# PR checks for the editable source. This workflow never deploys:
-# GitHub Pages keeps serving main / exactly as before.
+# PR checks for the editable source. This workflow never deploys: GitHub Pages
+# serves the files committed at main / (since 1c9c028, a Vite build committed by hand).
+# It typechecks, runs the parity suite against that live bundle plus the tests for
+# intended changes, builds dist/ and uploads it so QA can test the PR build.
 on:
   pull_request:
   workflow_dispatch:
@@ -31,7 +33,7 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Parity tests vs live 69cf5be
+      - name: Tests (parity vs live 1c9c028 + intended fixes)
         run: npm test
 
       - name: Build site (vite build + static copy + dist guard)

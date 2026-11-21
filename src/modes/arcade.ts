@@ -12,6 +12,7 @@ import { readLaunchPhase } from "../debug/launchParams";
 export const arcadeMethods = {
   startNew(this: Game) {
     this.audio.unlock();
+    this.resetRunHints();
     // QA launch flags from live: ?phase=<name> jumps to a chapter, ?qa=1 skips the intro.
     const jump = readLaunchPhase(window.location.search);
     if (jump) {
@@ -84,6 +85,10 @@ export const arcadeMethods = {
     const ch: ChapterLayout = CHAPTERS[phase] ?? CHAPTERS.shooter;
     this.weapon = ch.weapon;
     this.shovelT = 0;
+    this.swing = null;
+    this.swingCd = 0;
+    this.hitStop = 0;
+    this.clearTouchAim();
     this.structures = (ch.wrecks ?? []).map((w) => ({
       kind: w.kind,
       x: w.x,
