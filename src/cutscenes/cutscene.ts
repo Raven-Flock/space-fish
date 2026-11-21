@@ -9,6 +9,8 @@ export const cutsceneMethods = {
     this.mode = "cutscene";
     this.push(0, true);
     if (id === "intro") {
+      // F-07: decode the intro lines now, one after another in beat order (SD-07/-17)
+      this.audio.preloadVo(this.cut.map((b) => b.voice).filter(Boolean));
       this.playCine();
     }
   },
@@ -16,6 +18,9 @@ export const cutsceneMethods = {
     this.stopCine();
     let id = this.cutId;
     this.cut = [];
+    if (id === "intro") {
+      this.audio.dropVo(); // free the decoded lines (memory)
+    }
     switch (id) {
       case "intro": {
         this.startPhase("stealth");

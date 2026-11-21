@@ -1,8 +1,8 @@
 // v0.3 additions to PR #10, asserted on the real Game:
 // F-01 per GD's Nov 18 ruling (Rim chase 140, a shovel hit breaks the chase: 1.2 s search,
 // 3.0 s anti-lock, alert drains as usual), QA N-5 (click-repair reach), QA N-8 (facing
-// lock cone), VP-PHONE-HUD-v0.1 copy, and Sound Design's shovel SFX (v0.3.1: the 0.53
-// shovel cue trim from Sound's level correction, and the cues primed at audio unlock).
+// lock cone), VP-PHONE-HUD-v0.1 copy, and Sound Design's shovel SFX (v0.3.1: the shovel
+// cue trim from Sound's level correction, 0.48 on F-07's curve, and the cues primed at audio unlock).
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,6 +13,7 @@ import { SHOVEL } from "../src/content/tuning/shovel";
 import { AIM } from "../src/content/tuning/aim";
 import { CLICK_REPAIR, REPAIR_HINT } from "../src/content/tuning/build";
 import { SHOVEL_CUE_TRIM, SHOVEL_SFX } from "../src/content/tuning/sfx";
+import { AUDIO } from "../src/content/tuning/audio";
 import { HUD_HINT } from "../src/content/hud";
 import { HUD_TIMING } from "../src/content/tuning/hud";
 import { installEnv, type Env } from "./helpers/fakeEnv";
@@ -441,93 +442,103 @@ describe("Sound Design shovel SFX", () => {
     const credits = readFileSync(join(REPO_ROOT, "CREDITS.md"), "utf8");
     expect(credits).toContain("shovel-swing-{a,b,c}.m4a, shovel-tonk-{a,b,c}.m4a — original, Raven Flock, synthesized procedurally (gen_shovel_sfx.py, 2026-11-18).");
   });
-  const plays = (kind: string) => env!.audio.lines.filter((l: string) => l.startsWith(`play(sfx/shovel-${kind}-`)).map((l: string) => l.slice(-6, -5));
-  it("a swing sound on every swing, round-robin with no immediate repeat; tonk only on a hit", () => {
+  // F-07: the shovel files play as decoded buffers on the SFX bus (see shovel-sfx-bus.test.ts),
+  // so a cue shows up as a buf.start line once its file has decoded.
+  const flush = async () => { for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0)); };
+  const plays = (kind: string) => env!.audio.lines
+    .filter((l: string) => l.startsWith(`buf.start(sfx/shovel-${kind}-`))
+    .map((l: string) => l.charAt(`buf.start(sfx/shovel-${kind}-`.length));
+  it("a swing sound on every swing, round-robin with no immediate repeat; tonk only on a hit", async () => {
     const g = boot("rescue");
     place(g, 600, 518);
     g.steerCombat = () => {};
-    for (let i = 0; i < 7; i++) { g.pulseUse(); secs(g, SHOVEL.cooldown + 0.05); } // 7 misses
+    for (let i = 0; i < 7; i++) { g.pulseUse(); secs(g, SHOVEL.cooldown + 0.05); await flush(); } // 7 misses
     const sw = plays("swing");
     expect(sw.length).toBe(7);
     for (let i = 1; i < sw.length; i++) expect(sw[i]).not.toBe(sw[i - 1]);
     expect(plays("tonk").length).toBe(0);
-    for (let i = 0; i < 4; i++) { g.fish = []; fishAt(g, 50, 0); g.pulseUse(); secs(g, SHOVEL.cooldown + SHOVEL.hitStop + 0.05); } // 4 hits
+    for (let i = 0; i < 4; i++) { g.fish = []; fishAt(g, 50, 0); g.pulseUse(); secs(g, SHOVEL.cooldown + SHOVEL.hitStop + 0.05); await flush(); } // 4 hits
     expect(plays("swing").length).toBe(11);
     const tk = plays("tonk");
     expect(tk.length).toBe(4);
     for (let i = 1; i < tk.length; i++) expect(tk[i]).not.toBe(tk[i - 1]);
   });
-  it("cue trim, playbackRate within ±3% with pitch following; reduced motion leaves audio unchanged", () => {
+  it("cue trim, playbackRate within ±3% with pitch following; reduced motion leaves audio unchanged", async () => {
     const g = boot("rescue", { reducedMotion: true });
     place(g, 600, 518);
     fishAt(g, 50, 0);
-    g.pulseUse(); secs(g, 0.3);
+    g.pulseUse(); secs(g, 0.3); await flush();
     expect(plays("swing").length).toBe(1);
     expect(plays("tonk").length).toBe(1);
-    for (const a of [...g.audio.sfx.swing, ...g.audio.sfx.tonk].filter((a: any) => !a.paused)) {
-      expect(a.volume).toBe(SHOVEL_CUE_TRIM);
-      expect(a.preservesPitch).toBe(false);
-      expect(Math.abs(a.playbackRate - 1)).toBeLessThanOrEqual(0.03 + 1e-12);
+    const starts = env!.audio.lines.filter((l: string) => l.startsWith("buf.start(sfx/"));
+    for (const l of starts) {
+      const rate = +(l.match(/rate=([\d.]+)/)?.[1] ?? 1);
+      expect(Math.abs(rate - 1)).toBeLessThanOrEqual(SHOVEL_SFX.detune + 1e-12);
     }
+    expect(env!.audio.lines.some((l: string) => l.startsWith("new Audio(sfx/") || l.startsWith("play(sfx/"))).toBe(false);
   });
-  it("nothing plays before audio is unlocked, and menus load no SFX", () => {
+  it("nothing plays before audio is unlocked, and menus load no SFX", async () => {
     env?.restore();
     env = installEnv({ seed: 1 });
     const g: any = new Game(() => {});
     g.attach(env.canvas);
     g.startPhase("rescue");
     g.audio.swing();
+    await flush();
     expect(env.audio.lines.some((l: string) => l.includes("sfx/"))).toBe(false);
-    expect(g.audio.sfx).toBe(null);
   });
-  it("v0.3.1 level correction: every shovel cue (swing and tonk, all variants) plays at volume 0.53, whatever the Music slider says", () => {
-    expect(SHOVEL_CUE_TRIM).toBe(0.53);
+  it("level correction (0.48 on F-07's curve): every shovel cue (swing and tonk, all variants) plays at cue trim 0.48, whatever the Music slider says", async () => {
+    expect(SHOVEL_CUE_TRIM).toBe(0.48);
     const g = boot("rescue");
     place(g, 600, 518);
     g.steerCombat = () => {};
-    const seen = new Set<any>();
-    const check = () => {
-      for (const a of [...g.audio.sfx.swing, ...g.audio.sfx.tonk].filter((a: any) => !a.paused)) {
-        expect(a.volume, a.src).toBe(0.53);
-        seen.add(a);
-      }
+    await flush();
+    // F-07: each cue is source -> its own gain node -> SFX bus (sfx bus 1.0 x shovel cue trim 0.48)
+    const ac = g.audio.ac;
+    const cues: any[] = [];
+    const mk = ac.createGain.bind(ac);
+    ac.createGain = () => {
+      const n = mk();
+      n.connect = (to: any) => { if (to === g.audio.bus.sfx) cues.push(n); };
+      return n;
     };
     for (const music of [0, 0.35, 1]) {
       g.audio.setMusic(music);
-      for (let i = 0; i < 3; i++) { g.pulseUse(); secs(g, SHOVEL.cooldown + 0.05); check(); } // misses: swing only
-      for (let i = 0; i < 3; i++) { g.fish = []; fishAt(g, 50, 0); g.pulseUse(); secs(g, SHOVEL.cooldown + SHOVEL.hitStop + 0.05); check(); } // hits: swing + tonk
+      for (let i = 0; i < 3; i++) { g.pulseUse(); secs(g, SHOVEL.cooldown + 0.05); await flush(); } // misses: swing only
+      for (let i = 0; i < 3; i++) { g.fish = []; fishAt(g, 50, 0); g.pulseUse(); secs(g, SHOVEL.cooldown + SHOVEL.hitStop + 0.05); await flush(); } // hits: swing + tonk
     }
     expect(plays("swing").length).toBe(18);
     expect(plays("tonk").length).toBe(9);
-    expect([...seen].map((a: any) => a.src).sort()).toEqual([...SHOVEL_SFX.swing, ...SHOVEL_SFX.tonk].sort());
-    // the synth beeps keep their own master gain (not trimmed with the shovel cues)
-    expect(g.audio.master.gain.value).toBe(0.22);
+    expect(new Set(plays("swing"))).toEqual(new Set(["a", "b", "c"]));
+    expect(new Set(plays("tonk"))).toEqual(new Set(["a", "b", "c"]));
+    expect(cues.length).toBe(27);
+    for (const n of cues) expect(n.gain.value).toBe(0.48);
+    // the trim is per cue: the SFX bus stays at 1.0 and the synth beeps keep their own 0.22
+    expect(g.audio.busGain("sfx")).toBe(1);
+    expect(g.audio.bus.sfx.gain.value).toBe(1);
+    expect(g.audio.synth.gain.value).toBe(AUDIO.synthTrim);
+    expect(AUDIO.synthTrim).toBe(0.22);
   });
-  it("v0.3.1 QA minor: the six shovel cues are created and loaded at audio unlock (once), not on the first swing", () => {
+  it("v0.3.1 QA minor: the six shovel cues are created and loaded at audio unlock (once), not on the first swing", async () => {
     env?.restore();
     env = installEnv({ seed: 1 });
+    const fetched: string[] = [];
+    const f = (globalThis as any).fetch;
+    (globalThis as any).fetch = (u: string) => { fetched.push(u); return f(u); };
+    const sfx = () => fetched.filter((u) => u.startsWith("sfx/"));
     const g: any = new Game(() => {});
     g.attach(env.canvas);
     g.startPhase("rescue");
-    expect(g.audio.sfx).toBe(null);
+    await flush();
+    expect(sfx()).toEqual([]);
     g.audio.unlock();
-    const urls = [...SHOVEL_SFX.swing, ...SHOVEL_SFX.tonk];
-    expect([...g.audio.sfx.swing, ...g.audio.sfx.tonk].map((a: any) => a.src)).toEqual(urls);
-    for (const a of [...g.audio.sfx.swing, ...g.audio.sfx.tonk]) {
-      expect(a.preload).toBe("auto");
-      expect(a.volume).toBe(SHOVEL_CUE_TRIM);
-      expect(a.paused).toBe(true);
-    }
-    const loads = env.audio.lines.filter((l: string) => l.startsWith("load(sfx/"));
-    expect(loads).toEqual(urls.map((u) => `load(${u})`));
-    expect(env.audio.lines.some((l: string) => l.startsWith("play(sfx/"))).toBe(false);
-    const made = () => env!.audio.lines.filter((l: string) => l.startsWith("new Audio(sfx/")).length;
-    expect(made()).toBe(6);
-    g.audio.unlock(); // Retry / Continue unlock again: nothing is re-created or re-loaded
+    await flush();
+    expect(sfx()).toEqual([...SHOVEL_SFX.swing, ...SHOVEL_SFX.tonk]);
+    expect(env.audio.lines.some((l: string) => l.startsWith("buf.start(sfx/"))).toBe(false);
+    g.audio.unlock(); // Retry / Continue unlock again: nothing is fetched again
     place(g, 600, 518);
-    g.pulseUse(); secs(g, 0.1);
+    g.pulseUse(); secs(g, 0.1); await flush();
     expect(plays("swing").length).toBe(1);
-    expect(made()).toBe(6);
-    expect(env.audio.lines.filter((l: string) => l.startsWith("load(sfx/")).length).toBe(6);
+    expect(sfx().length).toBe(6);
   });
 });
