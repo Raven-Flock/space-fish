@@ -10,6 +10,7 @@ import { HUD_HINT, PAUSE_COPY, TITLE_HELP } from "../content/hud";
 import { AUDIO } from "../content/tuning/audio";
 import { PAUSE } from "../content/tuning/pause";
 import { fireSize, shipGuardX, stage, trayFlips, trayStep } from "./hudLayout";
+import { INTRO_LOADING_UI } from "../content/introLoad";
 import { tapProps } from "./tap";
 import { PointerBook } from "./heldPointers";
 export function SpaceFishApp() {
@@ -71,6 +72,18 @@ export function SpaceFishApp() {
   let repairsRef = useRef(-1);
   let [tray, setTray] = useState({ open: false, top: false });
   let [dwellTick, setDwellTick] = useState(0);
+  // F-05: `loading` is in the snapshot only while an intro beat waits for its plate
+  // (Game.introSnap); VP's line + bar show only after 300 ms of that wait
+  let introLoading = !!(snap as any).loading;
+  let [loadShown, setLoadShown] = useState(false);
+  useEffect(() => {
+    if (!introLoading) {
+      setLoadShown(false);
+      return;
+    }
+    let t = setTimeout(() => setLoadShown(true), INTRO_LOADING_UI.showAfterMs);
+    return () => clearTimeout(t);
+  }, [introLoading]);
   useEffect(() => {
     let e = () => {
       let t = window.matchMedia?.("(pointer: coarse)").matches;
@@ -523,9 +536,24 @@ export function SpaceFishApp() {
           <div className="flex-1" />
           {snap.mode === "cutscene" && (
             <div className={`pointer-events-auto m-3 flex items-end justify-between gap-3 sm:m-4 sf-safe sf-cutrow${fx}`}>
-              <p className="max-w-xl rounded-lg border border-border bg-surface/95 px-4 py-3 font-display text-lg leading-snug">
-                {snap.caption}
-              </p>
+              {introLoading ? (
+                // F-05 (VP (d)): "Loading…" and an unknown-progress sweep (an image load
+                // reports no progress, and the bar never fakes a percent)
+                <div
+                  className="max-w-xl rounded-lg border border-border bg-surface/95 px-4 py-3 sf-loading"
+                  role="status"
+                  style={loadShown ? undefined : { visibility: "hidden" }}
+                >
+                  <p className="sf-loading-text">Loading…</p>
+                  <div className="sf-loadbar" role="progressbar" aria-label="Intro loading">
+                    <span className="sf-loadbar-seg" />
+                  </div>
+                </div>
+              ) : (
+                <p className="max-w-xl rounded-lg border border-border bg-surface/95 px-4 py-3 font-display text-lg leading-snug">
+                  {snap.caption}
+                </p>
+              )}
               <button
                 type="button"
                 className="rounded-lg bg-primary px-4 py-3 font-display text-sm font-bold text-on-primary"

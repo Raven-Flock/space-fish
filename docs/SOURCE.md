@@ -32,7 +32,7 @@ Switching Pages to publish `dist/` is a separate, Sean-approved step.
 | `src/reclaim/` | the Pad: scrap nodes, wreck repairs (Generator, Turret, Lab), turrets, nest, launch check |
 | `src/modes/` | `arcade.ts`: title flow and chapter sequence |
 | `src/content/` | data only: `arcade/chapters.ts`, `arcade/transit.ts`, `cutscenes.ts`, `boss.ts`, `tuning/*` (incl. `tuning/shovel.ts`, `tuning/hud.ts` for VP's phone HUD limits) |
-| `src/cutscenes/` | cutscene beats, intro stills + voice |
+| `src/cutscenes/` | cutscene beats, intro stills + voice; `introLoad.ts` intro plate gate + load order (F-05) |
 | `src/audio/` | `AudioDirector`: music loops, crossfades, oscillator cues |
 | `src/assets/` | image loader |
 | `src/save/` | v1 save + music key (unchanged formats) |

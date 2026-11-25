@@ -263,3 +263,14 @@ export function makeAutopilot() {
     }
   };
 }
+
+// F-05 intro plate gate + load order (WP-01, WP answers Nov 18). Stubbed in parity: queueing
+// the art and the plates (so every image gets its src at boot, as live, and the music is
+// never gated), the beat hold (with its retries and 12 s cap), the title prefetch and the
+// loading snapshot. The helpers below do nothing while `intro` stays null.
+INTENDED.methods.push("queueArt", "queuePlate", "holdBeat", "introPrefetch", "introSnap");
+INTENDED.helpers.push(
+  "prefetchBeatOne", "introGate", "afterPlateOne", "introStart", "nextPlate", "requestPlate", "tryPlate",
+  "introPump", "settlePlate", "failPlate", "releaseArt", "startHeldBeat", "plateFailed", "logBeat",
+);
+Object.assign(INTENDED.state, { intro: null });

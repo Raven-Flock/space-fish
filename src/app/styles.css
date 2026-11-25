@@ -1904,11 +1904,54 @@ body {
   flex: none;
   min-height: 44px;
 }
+/* F-05 intro loading (VP v0.1.1 (d)): "Loading…" 12 px Sora 400 #E8EFE9 a0.85 in the caption
+   box; bar 160x4, radius 2, track #E8EFE9 a0.2, fill #3EC7C2 (UI accent, outside play).
+   Progress is unknown, so a 40 px segment sweeps every 1.6 s, ease-in-out. */
+.sf-loading-text {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: 12px;
+  line-height: 16px;
+  color: rgba(232, 239, 233, 0.85);
+}
+.sf-loadbar {
+  position: relative;
+  margin-top: 8px;
+  width: 160px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(232, 239, 233, 0.2);
+  overflow: hidden;
+}
+.sf-loadbar-seg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40px;
+  height: 100%;
+  border-radius: 2px;
+  background: #3ec7c2;
+  animation: sf-load-sweep 1.6s ease-in-out infinite;
+}
+@keyframes sf-load-sweep {
+  from {
+    transform: translateX(-40px);
+  }
+  to {
+    transform: translateX(160px);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .sf-hint,
   .sf-tray,
   .sf-hpfill,
   .sf-boss-chip {
     transition: none !important;
+  }
+  /* static under reduced motion: the segment rests in the middle of the track */
+  .sf-loadbar-seg {
+    animation: none;
+    transform: translateX(60px);
   }
 }
