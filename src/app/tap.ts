@@ -6,12 +6,24 @@ import { PAUSE } from "../content/tuning/pause";
 // off and lifts outside does nothing. The browser's follow-up mouse click for the same tap
 // is ignored for PAUSE.tapClickDedupeMs. A keyboard Enter or Space click (detail 0) and a
 // click with no pointer tap before it still act.
+// QA-PR12 v0.3 P2: a touch tap that closes or swaps the panel used to be followed by the
+// browser's synthesized mousedown, mouseup and click at the same point, which then hit
+// whatever control had moved under the finger (Stay -> Resume resumed the game; the
+// mousedown on the bare panel after Menu dropped Stay's focus). The same-control dedupe
+// can't see that. So the tap's touchend is cancelled: the browser sends no follow-up mouse
+// events at all, for any control. The listener sits on the pressed button itself, because
+// the tap usually removes that button, and a touchend on a removed node never bubbles to
+// React's root. Mouse and keyboard send no touchend.
 
 type Box = { left: number; top: number; right: number; bottom: number };
 const taps = new WeakMap<Element, { id: number | null; at: number }>();
 const now = () => performance.now();
 const inside = (r: Box, x: number, y: number) =>
   x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+
+function cancelTouchEnd(ev: Event) {
+  if (ev.cancelable) ev.preventDefault();
+}
 
 export function tapProps(act: () => void, onDown?: (e: any) => void) {
   return {
@@ -23,6 +35,7 @@ export function tapProps(act: () => void, onDown?: (e: any) => void) {
       try {
         (el as any).setPointerCapture?.(e.pointerId);
       } catch {}
+      if (e.pointerType === "touch") el.addEventListener("touchend", cancelTouchEnd, { once: true });
     },
     onPointerUp(e: any) {
       const el = e.currentTarget as Element;
@@ -35,6 +48,7 @@ export function tapProps(act: () => void, onDown?: (e: any) => void) {
     onPointerCancel(e: any) {
       const s = taps.get(e.currentTarget);
       if (s && s.id === e.pointerId) s.id = null;
+      e.currentTarget.removeEventListener("touchend", cancelTouchEnd);
     },
     onClick(e: any) {
       const s = taps.get(e.currentTarget);

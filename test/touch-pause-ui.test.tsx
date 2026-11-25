@@ -272,9 +272,36 @@ async function touchRig() {
     ptr("pointerup", id, x, y, target);
     t.b.frames(2);
   };
+  /**
+   * a real touch tap: pointerdown, pointerup, touchend. Then, only if touchend was not
+   * cancelled, what the browser does next: mousedown, mouseup and a click (detail 1) at the same
+   * point, on whatever control is under that point NOW (a bare panel focuses nothing).
+   */
+  const touchTap = (k: string, id: number) => {
+    const [x, y] = centre(k);
+    const target = el(k);
+    if (!target) throw new Error(`no ${k}`);
+    ptr("pointerdown", id, x, y, target);
+    ptr("pointerup", id, x, y, target);
+    const end = new Event("touchend", { bubbles: true, cancelable: true });
+    act(() => { target.dispatchEvent(end); });
+    if (!end.defaultPrevented) {
+      const hit = Object.keys(BOX)
+        .filter((n) => n !== "stick" && n !== "fire")
+        .map(el)
+        .find((c) => c && c.isConnected && (() => { const r = c.getBoundingClientRect(); return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; })());
+      const mouse = (type: string) => act(() => { (hit ?? document.body).dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, detail: 1 })); });
+      mouse("mousedown");
+      if (hit) hit.focus(); else (document.activeElement as HTMLElement | null)?.blur();
+      mouse("mouseup");
+      mouse("click");
+    }
+    t.b.frames(2);
+    return end;
+  };
   const key = (code: string) => act(() => { window.dispatchEvent(new KeyboardEvent("keydown", { code, key: code, bubbles: true })); window.dispatchEvent(new KeyboardEvent("keyup", { code, key: code, bubbles: true })); });
   const knob = () => el("stick")?.querySelector<HTMLElement>('span[style*="translate"]')?.style.transform;
-  return { t, g, el, ptr, tap, key, knob };
+  return { t, g, el, ptr, tap, touchTap, key, knob };
 }
 const LOCK_FRAMES = Math.floor(PAUSE.resumeIgnoreMs / (1000 / 60)) + 1; // first frame with now >= lock
 
@@ -331,6 +358,47 @@ describe("QA-PR12 P1: Pause and the panel act on pointerup inside the button (mu
     act(() => { p.focus(); p.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 0 })); });
     r.t.b.frames(2);
     expect(r.g().mode).toBe("pause");
+  });
+});
+
+describe("QA-PR12 v0.3: a touch tap's follow-up mouse events never reach another control (ghost click)", () => {
+  it("Pause, Menu, Stay on touch: Stay leaves the game paused (the click after it would land on Resume)", async () => {
+    const r = await touchRig();
+    r.touchTap("pause", 1);
+    expect(r.g().mode).toBe("pause");
+    r.touchTap("Menu", 2);
+    expect(r.t.host.querySelector('[data-f02="confirm"]')).toBeTruthy();
+    r.touchTap("Stay", 3);
+    expect(r.t.host.querySelector('[data-f02="confirm"]')).toBe(null);
+    expect(r.g().mode).toBe("pause");
+    expect(r.t.host.textContent).toContain("Paused");
+    r.touchTap("resume", 4); // a real Resume tap still works
+    expect(r.g().mode).toBe("play");
+  });
+  it("Leave still leaves on touch", async () => {
+    const r = await touchRig();
+    r.touchTap("pause", 1);
+    r.touchTap("Menu", 2);
+    r.touchTap("Leave", 3);
+    expect(r.g().mode).toBe("menu");
+  });
+  it("after a touch tap on Menu, Stay has focus (as with mouse and keyboard)", async () => {
+    const r = await touchRig();
+    r.touchTap("pause", 1);
+    r.touchTap("Menu", 2);
+    expect(document.activeElement?.textContent).toBe("Stay");
+  });
+  it("a tap's touchend is cancelled; one that can't be cancelled (a scroll) is left alone; a mouse click still acts once", async () => {
+    const r = await touchRig();
+    expect(r.touchTap("pause", 1).defaultPrevented).toBe(true);
+    const m = r.el("mute")!;
+    const [mx, my] = centre("mute");
+    r.ptr("pointerdown", 2, mx, my, m);
+    const scroll = new Event("touchend", { bubbles: true, cancelable: false });
+    act(() => { m.dispatchEvent(scroll); });
+    expect(scroll.defaultPrevented).toBe(false);
+    act(() => { m.dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 })); });
+    expect(r.g().audio.muted).toBe(true);
   });
 });
 

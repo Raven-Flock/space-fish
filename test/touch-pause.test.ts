@@ -370,7 +370,7 @@ describe("audio while paused (F-07's AudioDirector API)", () => {
     expect(has(after, "set", 1, t0)).toBe(true);
     expect(has(after, "lin", 0, t0 + PAUSE.audioFadeOutMs / 1000)).toBe(true);
     expect(suspended).toBe(0); // not before the fade
-    await wait(PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs + 30);
+    await wait(PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs + 250); // this stub's clock doesn't move, so it takes the stopped-clock path
     expect(suspended).toBe(1);
     expect(ac.state).toBe("suspended");
     expect(g.audio.held).toBe(true);
@@ -439,12 +439,26 @@ describe("audio while paused (F-07's AudioDirector API)", () => {
       expect(suspended()).not.toBe(null);
       expect(suspended()! - t0).toBeGreaterThanOrEqual((PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs) / 1000 - 1e-9);
     });
-    it("a stalled context clock (nothing is playing) suspends at the wall-clock deadline", () => {
+    it("never before the clock reaches fade + margin: a clock that moves in ~10.7 ms blocks (QA saw 7/120 at 74.7 ms) is waited for", () => {
+      const { g, ac, clock, timers, suspended } = setup();
+      const t0 = ac.currentTime;
+      g.pauseGame();
+      clock(74.7); // the last block boundary before the deadline
+      timers(PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs); // first check: the clock is 5.3 ms short
+      expect(suspended()).toBe(null);
+      timers(5); // the re-check sees no block yet: one check with no movement is not a stall
+      expect(suspended()).toBe(null);
+      clock(10.7); // next block: 85.4 ms
+      timers(10);
+      expect(suspended()).not.toBe(null);
+      expect(suspended()! - t0).toBeGreaterThanOrEqual((PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs) / 1000 - 1e-9);
+    });
+    it("a stopped context clock (no movement over several checks) still suspends, after the wall-clock deadline and never before", () => {
       const { g, timers, suspended } = setup();
       g.pauseGame();
-      timers(PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs - 1);
+      timers(PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs + 20);
       expect(suspended()).toBe(null);
-      timers(1);
+      timers(200);
       expect(suspended()).not.toBe(null);
     });
     it("Resume during the margin, or while waiting for the clock, cancels the pending suspend", () => {
