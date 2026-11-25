@@ -16,7 +16,7 @@ export const drawMethods = {
     ctx.beginPath();
     ctx.rect(0, 0, 960, 540);
     ctx.clip();
-    if (!this.reduce && this.shake > 0) {
+    if (!this.reduce && this.shake > 0 && !this.pausedFreeze()) {
       ctx.translate(
         (random() - 0.5) * this.shake * 12,
         (random() - 0.5) * this.shake * 8,
@@ -24,7 +24,11 @@ export const drawMethods = {
     }
     if (this.mode === "menu" || this.mode === "credits") {
       this.drawMoonScene(0.15);
-    } else if (this.mode === "cutscene" || this.mode === "victory") {
+    } else if (
+      this.mode === "cutscene" ||
+      this.mode === "victory" ||
+      (this.mode === "pause" && this.pauseFrom === "cutscene")
+    ) {
       let e = this.cut[this.beat];
       this.drawScene(
         e?.kind ?? (this.mode === "victory" ? "victory" : "wide"),

@@ -163,6 +163,8 @@ export function installEnv(opts: EnvOptions = {}) {
     setTargetAtTime(v: number, t: number, tau: number) { audio.add(`${this.name}.target(${fmt(v)},${fmt(t)},${fmt(tau)})`); }
     setValueCurveAtTime(c: ArrayLike<number>, t: number, d: number) { audio.add(`${this.name}.curve(${fmt(c[0])}..${fmt(c[c.length - 1])},${fmt(t)},${fmt(d)})`); }
     cancelScheduledValues(t: number) { audio.add(`${this.name}.cancel(${fmt(t)})`); }
+    // F-02 pause fades (master out before suspend, music bus in after resume)
+    linearRampToValueAtTime(v: number, t: number) { audio.add(`${this.name}.lin(${fmt(v)},${fmt(t)})`); }
   }
   // Fake fetched audio: the bytes are the URL text, so the fake decode can tag the
   // buffer with it (16 s mono at the context rate).

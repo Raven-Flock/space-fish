@@ -54,15 +54,19 @@ export function PadButton({
   onPress: t,
   hold: n,
   onHold: r,
+  zone,
 }: {
   children?: any;
   onPress?: () => void;
   hold?: boolean;
   onHold?: (down: boolean) => void;
+  /** data-f02 zone (GD 2026-11-18: "fire" lets a held Fire re-acquire after a resume) */
+  zone?: string;
 }) {
   return (
     <button
       type="button"
+      data-f02={zone}
       className="font-display font-bold"
       style={{
         minHeight: 64,

@@ -7,6 +7,8 @@ export const loopMethods = {
       if (this.stopped) {
         return;
       }
+      this.pollPad();
+      this.pollReacquire();
       let n = Math.min(0.05, (t - this.last) / 1000);
       this.last = t;
       for (this.acc += n; this.acc >= 1 / 60;) {
