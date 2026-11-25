@@ -5,6 +5,10 @@ export const PAUSE = {
   resumeIgnoreMs: 150,
   /** master fades to 0 over this long before the AudioContext suspends (no click), ms (Sound) */
   audioFadeOutMs: 40,
+  /** after that fade ends, wait this long before suspending the context (QA-PR12 P2), ms */
+  suspendMarginMs: 40,
+  /** after a pointer tap on a pause control, ignore a mouse click on it for this long, ms */
+  tapClickDedupeMs: 600,
   /** music bus fades back in over this long after a resume, ms (Sound) */
   musicFadeInMs: 150,
   /** visible Pause plate inside the 36 px top strip, CSS px (VP v0.1.2) */

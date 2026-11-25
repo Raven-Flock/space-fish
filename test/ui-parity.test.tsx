@@ -136,10 +136,12 @@ const COPY: Array<[string, string]> = [
 function withoutF02(s: string, seen: Set<string>) {
   return s
     .replace(/<button[^>]*data-f02="(pause|mute)"[^>]*>.*?<\/button>/g, (_m, k) => { seen.add(k); return ""; })
-    .replace(/<header class="([^"]*)" style="padding-right:[^"]*">/g, (_m, c) => { seen.add("header"); return `<header class="${c}">`; });
+    .replace(/<header class="([^"]*)" style="padding-right:[^"]*">/g, (_m, c) => { seen.add("header"); return `<header class="${c}">`; })
+    // QA-PR12 / GD 2026-11-18: zone tags on the stick, Fire and Resume (attribute only)
+    .replace(/ data-f02="(stick|fire|resume)"/g, (_m, k) => { seen.add(k); return ""; });
 }
 /** F-02's stubbed entry points (see INTENDED in helpers/sim.ts). */
-const F02_METHODS = ["pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad"];
+const F02_METHODS = ["pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad", "pollReacquire"];
 /**
  * Run our Root with F-02's entry points stubbed (as liveEquivalent does for the sim), so the
  * DOM session follows live's pause path. Earlier PRs' intended changes stay on: their copy
@@ -216,7 +218,7 @@ describe("React shell matches live 1c9c028 (plus intended copy changes)", () => 
     expect(b.length).toBe(a.length);
     for (let i = 0; i < a.length; i++) expect(withoutF02(b[i], seen)).toBe(withCopy(a[i], used));
     expect([...used].sort()).toEqual([0, 1, 2]);
-    expect([...seen].sort()).toEqual(["header", "mute", "pause"]);
+    expect([...seen].sort()).toEqual(["header", "mute", "pause", "resume"]);
   });
 
   it("phone (coarse pointer) session: same DOM after every step", async () => {
@@ -227,7 +229,7 @@ describe("React shell matches live 1c9c028 (plus intended copy changes)", () => 
     expect(b.length).toBe(a.length);
     for (let i = 0; i < a.length; i++) expect(withoutF02(b[i], seen)).toBe(withCopy(a[i], used, true));
     expect([...used].sort((x, y) => x - y)).toEqual([0, 1, 2, 10, 11, 12, 13]);
-    expect([...seen].sort()).toEqual(["header", "mute", "pause"]);
+    expect([...seen].sort()).toEqual(["fire", "header", "mute", "pause", "resume", "stick"]);
   });
 
   it("no 'walk' anywhere in Transit (desktop and phone), and Use is hidden there on a phone", async () => {

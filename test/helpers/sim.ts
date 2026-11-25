@@ -79,6 +79,9 @@ function liveIntent(lines: string[]) {
 INTENDED.methods.push("pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad");
 INTENDED.helpers.push("clearHeldInput", "bindPause", "quitToTitle");
 Object.assign(INTENDED.state, { pauseFrom: "play", resumeLockUntil: 0, padStart: false });
+// GD ruling 2026-11-18: held stick/Fire re-acquire after the resume lock (stubbed like the rest of F-02)
+INTENDED.methods.push("pollReacquire");
+Object.assign(INTENDED.state, { reacquirePending: false, onReacquire: null });
 
 /** Our Game with only the intended new entry points turned off: must equal live 1c9c028. */
 export function liveEquivalent<T extends new (...a: any[]) => any>(G: T): T {

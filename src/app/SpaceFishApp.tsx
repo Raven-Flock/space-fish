@@ -9,6 +9,8 @@ import { HUD_HINT, PAUSE_COPY, TITLE_HELP } from "../content/hud";
 import { HUD_TIMING } from "../content/tuning/hud";
 import { AUDIO } from "../content/tuning/audio";
 import { PAUSE } from "../content/tuning/pause";
+import { tapProps } from "./tap";
+import { PointerBook } from "./heldPointers";
 export function SpaceFishApp() {
   let canvasRef = useRef(null);
   let gameRef = useRef(null);
@@ -36,6 +38,17 @@ export function SpaceFishApp() {
     walkHintTimer.current = null;
   };
   useEffect(() => () => clearTimeout(walkHintTimer.current), []);
+  // GD ruling 2026-11-18: held stick and Fire re-acquire after a resume (see heldPointers.ts).
+  // stickCentre: a re-acquired stick is centred where the finger is (zero deflection, no lurch).
+  // adopted: re-acquired pointers. Their moves and lifts arrive on the window, because the new
+  // stick and Fire elements never captured them.
+  let book = useRef(new PointerBook());
+  let stickCentre = useRef(null);
+  let firePointer = useRef(null);
+  let adopted = useRef(new Set());
+  let touchRef = useRef(null);
+  let moveStickRef = useRef(null);
+  let releaseStickRef = useRef(null);
   // F-02 pause panel: Mute toggle (persisted by AudioDirector) and the Menu confirm step
   let [muted, setMutedUi] = useState(false);
   let [confirmMenu, setConfirmMenu] = useState(false);
@@ -97,9 +110,39 @@ export function SpaceFishApp() {
     let r = new Game(setSnap);
     gameRef.current = r;
     r.attach(n);
+    r.onReacquire = () => {
+      let fireEl = touchRef.current?.querySelector('[data-f02="fire"]');
+      let { stick, fire } = book.current.pick(fireEl ? fireEl.getBoundingClientRect() : null);
+      if (stick && stickPointer.current == null && touchRef.current?.querySelector('[data-f02="stick"]')) {
+        stickPointer.current = stick.id;
+        stickCentre.current = { x: stick.x, y: stick.y };
+        adopted.current.add(stick.id);
+        setKnob({ x: 0, y: 0 });
+        r.setStick(0, 0, true);
+      }
+      if (fire && firePointer.current == null) {
+        firePointer.current = fire.id;
+        adopted.current.add(fire.id);
+        r.setFire(true);
+      }
+    };
+    let offBook = book.current.attach(
+      window,
+      (e) => adopted.current.has(e.pointerId) && moveStickRef.current?.(e),
+      (e) => {
+        if (!adopted.current.delete(e.pointerId)) return;
+        releaseStickRef.current?.(e);
+        if (firePointer.current === e.pointerId) {
+          firePointer.current = null;
+          gameRef.current?.setFire(false);
+        }
+      },
+    );
     r.startLoop();
     setReady(true);
     return () => {
+      offBook();
+      r.onReacquire = null;
       r.detach();
       gameRef.current = null;
     };
@@ -120,6 +163,11 @@ export function SpaceFishApp() {
   }, []);
   useEffect(() => {
     // F-02: leaving play drops any held stick (the game clears its own held input on pause)
+    if (snap.mode !== "play") {
+      stickCentre.current = null;
+      firePointer.current = null;
+      adopted.current.clear();
+    }
     if (snap.mode !== "play" && stickPointer.current != null) {
       stickPointer.current = null;
       setKnob({
@@ -152,8 +200,9 @@ export function SpaceFishApp() {
     }
     e.preventDefault();
     let r = stickRef.current.getBoundingClientRect();
-    let a = e.clientX - (r.left + r.width / 2);
-    let o = e.clientY - (r.top + r.height / 2);
+    let c = stickCentre.current ?? { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    let a = e.clientX - c.x;
+    let o = e.clientY - c.y;
     if (forced) {
       let e = a;
       a = o;
@@ -181,6 +230,7 @@ export function SpaceFishApp() {
       return;
     }
     stickPointer.current = null;
+    stickCentre.current = null;
     stopWalkHintTimer();
     setKnob({
       x: 0,
@@ -188,6 +238,8 @@ export function SpaceFishApp() {
     });
     gameRef.current?.setStick(0, 0);
   };
+  moveStickRef.current = moveStick;
+  releaseStickRef.current = releaseStick;
   let showTouch = touchUi && (!portrait || forced);
   // VP Transit hint: hidden (faded) once the game says so; re-read on every HUD snap
   let transitHintDone = !!gameRef.current?.transitHint?.done;
@@ -244,8 +296,7 @@ export function SpaceFishApp() {
               background: "transparent",
               touchAction: "none",
             }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => gameRef.current?.pauseGame()}
+            {...tapProps(() => gameRef.current?.pauseGame(), (e) => e.stopPropagation())}
           >
             <span
               aria-hidden="true"
@@ -472,14 +523,14 @@ export function SpaceFishApp() {
                     type="button"
                     ref={stayRef}
                     className="rounded-lg bg-primary px-5 py-3 font-display font-bold text-on-primary"
-                    onClick={() => setConfirmMenu(false)}
+                    {...tapProps(() => setConfirmMenu(false))}
                   >
                     {PAUSE_COPY.stay}
                   </button>
                   <button
                     type="button"
                     className="rounded-lg border border-border px-5 py-3 font-display font-bold"
-                    onClick={() => gameRef.current?.quitToTitle()}
+                    {...tapProps(() => gameRef.current?.quitToTitle())}
                   >
                     {PAUSE_COPY.leave}
                   </button>
@@ -488,8 +539,9 @@ export function SpaceFishApp() {
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    data-f02="resume"
                     className="rounded-lg bg-primary px-5 py-3 font-display font-bold text-on-primary"
-                    onClick={() => gameRef.current?.resume()}
+                    {...tapProps(() => gameRef.current?.resume())}
                   >
                     Resume
                   </button>
@@ -498,18 +550,18 @@ export function SpaceFishApp() {
                     data-f02="mute"
                     aria-pressed={muted}
                     className="rounded-lg border border-border px-5 py-3 font-display font-bold"
-                    onClick={() => {
+                    {...tapProps(() => {
                       let m = !muted;
                       setMutedUi(m);
                       gameRef.current?.audio.setMuted(m);
-                    }}
+                    })}
                   >
                     {muted ? PAUSE_COPY.unmute : PAUSE_COPY.mute}
                   </button>
                   <button
                     type="button"
                     className="rounded-lg border border-border px-5 py-3 font-display font-bold"
-                    onClick={() => setConfirmMenu(true)}
+                    {...tapProps(() => setConfirmMenu(true))}
                   >
                     Menu
                   </button>
@@ -601,6 +653,7 @@ export function SpaceFishApp() {
       )}
       {snap.mode === "play" && showTouch && (
         <div
+          ref={touchRef}
           className="pointer-events-none absolute inset-0"
           style={{
             zIndex: 30,
@@ -608,6 +661,7 @@ export function SpaceFishApp() {
         >
           <div
             ref={stickRef}
+            data-f02="stick"
             className="pointer-events-auto absolute"
             style={{
               left: forced
@@ -675,7 +729,7 @@ export function SpaceFishApp() {
                 Noise
               </PadButton>
             )}
-            <PadButton hold onHold={(e) => gameRef.current?.setFire(e)}>
+            <PadButton hold zone="fire" onHold={(e) => gameRef.current?.setFire(e)}>
               {snap.weapon === "Shovel" ? "Dig" : "Fire"}
             </PadButton>
             {snap.phase !== "shooter" && (
