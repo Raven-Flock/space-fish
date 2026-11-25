@@ -59,6 +59,7 @@ export function PadButton({
   className: c,
   label: l,
   onUse: u,
+  zone,
 }: {
   children?: any;
   onPress?: () => void;
@@ -74,12 +75,15 @@ export function PadButton({
   label?: string;
   /** F-04: counts a use (press) of the button, for the label rule */
   onUse?: () => void;
+  /** data-f02 zone (GD 2026-11-18: "fire" lets a held Fire re-acquire after a resume) */
+  zone?: string;
 }) {
   let btn = (
     <button
       type="button"
       className="font-display font-bold"
       data-hud={h}
+      data-f02={zone}
       style={{
         ...(z
           ? { width: z, height: z, padding: 0, fontSize: typeof z === "number" && z < 56 ? 12 : 16 }

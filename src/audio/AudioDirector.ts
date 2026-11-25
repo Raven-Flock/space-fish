@@ -23,6 +23,8 @@ import { random } from "../engine/rng";
 // Small API for other systems (F-02 pause calls these; nothing else should touch ctx):
 //   suspend(fadeMs?) hold all audio (pause, auto-pause). Stays held until resume().
 //                    F-02 passes ~40 ms: master fades to 0 first, then the context suspends.
+//   suspend(fadeMs, marginMs) the context suspends only after the fade ends plus the margin,
+//                    on the AudioContext clock (QA-PR12 P2).
 //   resume(fadeMs?)  release the hold (resumes unless the page is hidden). Master comes back
 //                    at the usual level ramp; F-02 passes 150 ms to fade the music bus in.
 //   setMuted(bool)   master mute, saved in localStorage.
@@ -253,8 +255,14 @@ export class AudioDirector {
    * Hold all audio (F-02: Esc/Pause button, auto-pause on hide/blur). With fadeMs (F-02,
    * Sound: ~40 ms) the master gain ramps to 0 first and the context suspends after it, so
    * pausing never clicks. Without it the context suspends at once.
+   * QA-PR12 P2: a timer set to exactly fadeMs sometimes went off before the ramp had
+   * finished, so 9 of 120 pauses suspended with master still at 0.20. Now the suspend waits
+   * until the context clock is past the ramp end plus marginMs. A wall-clock timer sets
+   * the first check. If the context clock is still short of that time, the check is set
+   * again for the remaining time. If the clock has stopped (nothing is playing), the
+   * context suspends straight away. resume() cancels any pending suspend.
    */
-  suspend(fadeMs = 0) {
+  suspend(fadeMs = 0, marginMs = 0) {
     this.held = true;
     clearTimeout(this.holdTimer);
     this.holdTimer = null;
@@ -265,10 +273,20 @@ export class AudioDirector {
       g.cancelScheduledValues(t);
       g.setValueAtTime(this.muted ? 0 : 1, t);
       g.linearRampToValueAtTime(0, t + fadeMs / 1000);
-      this.holdTimer = setTimeout(() => {
+      const until = t + (fadeMs + marginMs) / 1000;
+      let seen = t;
+      const check = () => {
         this.holdTimer = null;
-        if (this.held) this.ac?.suspend()?.catch?.(() => {});
-      }, fadeMs);
+        if (!this.held) return;
+        const now = this.ac?.currentTime ?? until;
+        if (now + 1e-6 < until && now > seen) {
+          seen = now;
+          this.holdTimer = setTimeout(check, Math.max(5, (until - now) * 1000));
+          return;
+        }
+        this.ac?.suspend()?.catch?.(() => {});
+      };
+      this.holdTimer = setTimeout(check, fadeMs + marginMs);
       return;
     }
     ac?.suspend()?.catch?.(() => {});

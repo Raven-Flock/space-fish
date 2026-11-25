@@ -8,6 +8,9 @@ import { PAUSE } from "../content/tuning/pause";
 // AudioDirector API (suspend/resume/setMuted: master fades out, then the one
 // AudioContext suspends, so music, VO and SFX all stop in place), and all held
 // input is cleared. Nothing resumes except an explicit Resume, Esc/P or Start.
+// GD ruling 2026-11-18 (~1:30 PM): once the resume ignore window ends, held touch input is
+// rebuilt from the live pointers (the UI's onReacquire: stick and Fire). The gamepad is
+// polled live, and keys need a fresh press because held keys stay cleared and auto-repeat is ignored.
 // Pausing never writes the save (AAA §4E).
 
 const ACTIVE = ["play", "cutscene"];
@@ -30,14 +33,32 @@ export const pauseMethods = {
   },
   /** Side effects of entering pause (any route, including the Esc path). */
   onPause(this: Game) {
+    this.reacquirePending = false;
     this.clearHeldInput();
-    this.audio.suspend(PAUSE.audioFadeOutMs);
+    this.audio.suspend(PAUSE.audioFadeOutMs, PAUSE.suspendMarginMs);
     return true;
   },
   /** Side effects of leaving pause back into play or the cutscene (called by resume()). */
   onResume(this: Game) {
     this.resumeLockUntil = performance.now() + PAUSE.resumeIgnoreMs;
+    this.reacquirePending = this.mode === "play";
     this.audio.resume(PAUSE.musicFadeInMs);
+    return true;
+  },
+  /**
+   * Once per frame (before the sim steps). On the first frame after the resume ignore
+   * window ends, hand over to the UI to re-acquire the stick and Fire from live pointers.
+   * This runs once per resume. Leaving play first, or pausing again, cancels it.
+   */
+  pollReacquire(this: Game) {
+    if (!this.reacquirePending) return false;
+    if (this.mode !== "play") {
+      this.reacquirePending = false;
+      return false;
+    }
+    if (performance.now() < this.resumeLockUntil) return false;
+    this.reacquirePending = false;
+    this.onReacquire?.();
     return true;
   },
   /** Stick, Fire, Use, Noise, held keys, a pending tap-to-walk and the touch-aim point. */

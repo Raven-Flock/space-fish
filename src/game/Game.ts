@@ -170,6 +170,9 @@ export class Game {
   pauseFrom = "play";
   resumeLockUntil = 0;
   padStart = false;
+  /** GD ruling 2026-11-18: rebuild held touch input once the resume lock ends (UI sets onReacquire) */
+  reacquirePending = false;
+  onReacquire: null | (() => void) = null;
   declare cine: any;
   declare cineVid: any;
   declare voiceEl: any;
