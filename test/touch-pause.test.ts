@@ -1,6 +1,6 @@
 // F-02 touch pause (GD F02-TOUCH-PAUSE-v0.1; AAA v0.1 §1.5-1.6), asserted on the real Game.
 // Parity (sim-parity / ui-parity) runs with these entry points stubbed; here they are on.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Game } from "../src/game/Game";
 import { AudioDirector } from "../src/audio/AudioDirector";
 import { PAUSE } from "../src/content/tuning/pause";
@@ -187,6 +187,80 @@ describe("held input is cleared on pause (no stuck stick, Fire or aim)", () => {
   });
 });
 
+describe("GD ruling 2026-11-18: held input re-acquires after the resume window (game side)", () => {
+  const lockFrames = Math.floor(PAUSE.resumeIgnoreMs / (1000 / 60)) + 1; // first frame with now >= lock
+  it("onReacquire runs once, on the first frame after the window, and only when resuming into play", () => {
+    const { g } = boot("rescue");
+    let calls = 0;
+    g.onReacquire = () => { calls++; expect(g.inputLocked()).toBe(false); };
+    g.pauseGame();
+    frames(30);
+    expect(calls).toBe(0); // never while paused
+    g.resume();
+    frames(lockFrames - 1);
+    expect(calls).toBe(0);
+    frames(1);
+    expect(calls).toBe(1);
+    frames(30);
+    expect(calls).toBe(1);
+    // pausing again inside the window cancels it
+    g.pauseGame();
+    g.resume();
+    frames(2);
+    g.pauseGame();
+    frames(lockFrames + 5);
+    expect(calls).toBe(1);
+    // a cutscene resume never re-acquires play input
+    g.beginCutscene("intro");
+    g.pauseGame();
+    g.resume();
+    expect(g.mode).toBe("cutscene");
+    frames(lockFrames + 5);
+    expect(calls).toBe(1);
+  });
+  it("(4) keyboard: a key held through the pause needs a fresh press (auto-repeat is ignored); (5) a key released while paused leaves nothing stuck", () => {
+    const { g } = boot("rescue");
+    g.fish = []; g.covers = [];
+    env!.key("keydown", "KeyD");
+    env!.key("keydown", "KeyW");
+    g.pauseGame();
+    env!.key("keyup", "KeyW"); // lifted while paused
+    g.resume();
+    frames(lockFrames + 2);
+    expect([...g.keys]).toEqual([]);
+    const x = g.player.x, y = g.player.y;
+    env!.win.emit("keydown", { code: "KeyD", key: "KeyD", repeat: true, preventDefault() {} }); // still held: auto-repeat
+    frames(10);
+    expect([g.player.x, g.player.y]).toEqual([x, y]);
+    env!.key("keyup", "KeyD");
+    env!.key("keydown", "KeyD"); // a fresh press
+    frames(10);
+    expect(g.player.x).toBeGreaterThan(x);
+    expect(g.player.y).toBe(y);
+  });
+  it("(4) gamepad: read live after the window; Start held through it neither re-pauses nor leaves input latched", () => {
+    const pad = { buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
+    setGlobal("navigator", { getGamepads: () => [pad] });
+    const { g } = boot("rescue");
+    pad.buttons[PAUSE.padStartButton].pressed = true;
+    frames(1);
+    expect(g.mode).toBe("pause");
+    pad.buttons[PAUSE.padStartButton].pressed = false;
+    frames(1);
+    pad.buttons[PAUSE.padStartButton].pressed = true; // resume, and keep holding Start
+    frames(1);
+    expect(g.mode).toBe("play");
+    frames(lockFrames + 10);
+    expect(g.mode).toBe("play");
+    expect([g.stickX, g.stickY, g.fireLatch]).toEqual([0, 0, false]);
+    pad.buttons[PAUSE.padStartButton].pressed = false;
+    frames(1);
+    pad.buttons[PAUSE.padStartButton].pressed = true; // live state: a new press pauses at once
+    frames(1);
+    expect(g.mode).toBe("pause");
+  });
+});
+
 describe("auto-pause", () => {
   it("tab hidden, window blur and pagehide pause during play and cutscenes", () => {
     for (const how of ["hidden", "blur", "pagehide"]) {
@@ -296,7 +370,7 @@ describe("audio while paused (F-07's AudioDirector API)", () => {
     expect(has(after, "set", 1, t0)).toBe(true);
     expect(has(after, "lin", 0, t0 + PAUSE.audioFadeOutMs / 1000)).toBe(true);
     expect(suspended).toBe(0); // not before the fade
-    await wait(PAUSE.audioFadeOutMs + 30);
+    await wait(PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs + 30);
     expect(suspended).toBe(1);
     expect(ac.state).toBe("suspended");
     expect(g.audio.held).toBe(true);
@@ -318,6 +392,76 @@ describe("audio while paused (F-07's AudioDirector API)", () => {
     expect(has(back, "set", 0, t1)).toBe(true);
     expect(has(back, "lin", musicGain, t1 + PAUSE.musicFadeInMs / 1000)).toBe(true);
     expect(back.some((l: string) => l.startsWith("buf.start(") || l.startsWith("buf.stop("))).toBe(false);
+  });
+  describe(`QA-PR12 P2: suspend waits for the fade to end plus ${PAUSE.suspendMarginMs} ms, on the context clock`, () => {
+    /** a playing Game with fake timers; tick(ms) moves the context clock and the timers together */
+    const setup = () => {
+      const { g, env: e } = boot("rescue");
+      const ac = g.audio.ac;
+      expect(ac.state).toBe("running");
+      let suspendedAt: number | null = null;
+      const sus = ac.suspend.bind(ac);
+      ac.suspend = () => { suspendedAt ??= ac.currentTime; return sus(); };
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      restoreGlobals.push(() => vi.useRealTimers());
+      const clock = (ms: number) => e.frame(ms);
+      const timers = (ms: number) => vi.advanceTimersByTime(ms);
+      return { g, e, ac, clock, timers, suspended: () => suspendedAt };
+    };
+    it("tuning: 40 ms margin after Sound's 40 ms fade", () => {
+      expect([PAUSE.audioFadeOutMs, PAUSE.suspendMarginMs]).toEqual([40, 40]);
+    });
+    it("not at the end of the fade; only once the clock is past fade + margin, so master has reached 0", () => {
+      const { g, e, ac, clock, timers, suspended } = setup();
+      const mark = e.audio.lines.length;
+      const t0 = ac.currentTime;
+      g.pauseGame();
+      const end = t0 + PAUSE.audioFadeOutMs / 1000;
+      expect(has(e.audio.lines.slice(mark), "lin", 0, end)).toBe(true);
+      clock(PAUSE.audioFadeOutMs); timers(PAUSE.audioFadeOutMs); // the old race point
+      expect(suspended()).toBe(null);
+      clock(PAUSE.suspendMarginMs - 1); timers(PAUSE.suspendMarginMs - 1);
+      expect(suspended()).toBe(null);
+      clock(1); timers(1);
+      expect(suspended()).not.toBe(null);
+      expect(suspended()!).toBeGreaterThanOrEqual(end + PAUSE.suspendMarginMs / 1000 - 1e-9);
+      expect(ac.state).toBe("suspended");
+    });
+    it("a context clock running behind the wall clock (busy iOS output) defers the suspend until it catches up", () => {
+      const { g, ac, clock, timers, suspended } = setup();
+      const t0 = ac.currentTime;
+      g.pauseGame();
+      clock(30); // the context has only played 30 ms ...
+      timers(PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs); // ... when the wall-clock timer fires
+      expect(suspended()).toBe(null);
+      clock(60);
+      timers(60);
+      expect(suspended()).not.toBe(null);
+      expect(suspended()! - t0).toBeGreaterThanOrEqual((PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs) / 1000 - 1e-9);
+    });
+    it("a stalled context clock (nothing is playing) suspends at the wall-clock deadline", () => {
+      const { g, timers, suspended } = setup();
+      g.pauseGame();
+      timers(PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs - 1);
+      expect(suspended()).toBe(null);
+      timers(1);
+      expect(suspended()).not.toBe(null);
+    });
+    it("Resume during the margin, or while waiting for the clock, cancels the pending suspend", () => {
+      const { g, ac, clock, timers, suspended } = setup();
+      g.pauseGame();
+      clock(PAUSE.audioFadeOutMs + 10); timers(PAUSE.audioFadeOutMs + 10); // fade done, inside the margin
+      g.resume();
+      clock(500); timers(500);
+      expect(suspended()).toBe(null);
+      expect(ac.state).toBe("running");
+      g.pauseGame();
+      clock(20); timers(PAUSE.audioFadeOutMs + PAUSE.suspendMarginMs); // re-armed for the clock
+      g.resume();
+      clock(500); timers(500);
+      expect(suspended()).toBe(null);
+      expect(ac.state).toBe("running");
+    });
   });
   it("a resume inside the fade cancels the pending suspend", async () => {
     const { g } = boot("rescue");

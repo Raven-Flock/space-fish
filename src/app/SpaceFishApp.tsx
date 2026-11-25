@@ -10,6 +10,8 @@ import { HUD_HINT, PAUSE_COPY, TITLE_HELP } from "../content/hud";
 import { AUDIO } from "../content/tuning/audio";
 import { PAUSE } from "../content/tuning/pause";
 import { fireSize, shipGuardX, stage, trayFlips, trayStep } from "./hudLayout";
+import { tapProps } from "./tap";
+import { PointerBook } from "./heldPointers";
 export function SpaceFishApp() {
   let canvasRef = useRef(null);
   let gameRef = useRef(null);
@@ -18,6 +20,17 @@ export function SpaceFishApp() {
   // F-04 floating stick: the thumb's landing point is the stick's origin
   let stickOrigin = useRef({ x: 0, y: 0 });
   let deflectTimer = useRef(null);
+  // GD ruling 2026-11-18: held stick and Fire re-acquire after a resume (see heldPointers.ts).
+  // A re-acquired stick takes the finger's current position as its origin (the floating
+  // stick's landing point), so it starts at zero deflection. adopted: re-acquired pointers.
+  // Their moves and lifts arrive on the window, because the new stick and Fire elements
+  // never captured them.
+  let book = useRef(new PointerBook());
+  let firePointer = useRef(null);
+  let adopted = useRef(new Set());
+  let touchRef = useRef(null);
+  let moveStickRef = useRef(null);
+  let releaseStickRef = useRef(null);
   let phaseRef = useRef("stealth");
   let toastTimer = useRef(null);
   let lastObjective = useRef("");
@@ -111,9 +124,40 @@ export function SpaceFishApp() {
     let r = new Game(setSnap);
     gameRef.current = r;
     r.attach(n);
+    r.onReacquire = () => {
+      let fireEl = touchRef.current?.querySelector('[data-f02="fire"]');
+      let { stick, fire } = book.current.pick(fireEl ? fireEl.getBoundingClientRect() : null);
+      if (stick && stickPointer.current == null && touchRef.current?.querySelector('[data-f02="stick"]')) {
+        stickPointer.current = stick.id;
+        stickOrigin.current = { x: stick.x, y: stick.y };
+        adopted.current.add(stick.id);
+        setStickOn(true);
+        setKnob({ x: 0, y: 0 });
+        r.setStick(0, 0, true);
+      }
+      if (fire && firePointer.current == null) {
+        firePointer.current = fire.id;
+        adopted.current.add(fire.id);
+        r.setFire(true);
+      }
+    };
+    let offBook = book.current.attach(
+      window,
+      (e) => adopted.current.has(e.pointerId) && moveStickRef.current?.(e),
+      (e) => {
+        if (!adopted.current.delete(e.pointerId)) return;
+        releaseStickRef.current?.(e);
+        if (firePointer.current === e.pointerId) {
+          firePointer.current = null;
+          gameRef.current?.setFire(false);
+        }
+      },
+    );
     r.startLoop();
     setReady(true);
     return () => {
+      offBook();
+      r.onReacquire = null;
       r.detach();
       gameRef.current = null;
     };
@@ -134,6 +178,10 @@ export function SpaceFishApp() {
   }, []);
   useEffect(() => {
     // F-02: leaving play drops any held stick (the game clears its own held input on pause)
+    if (snap.mode !== "play") {
+      firePointer.current = null;
+      adopted.current.clear();
+    }
     if (snap.mode !== "play" && stickPointer.current != null) {
       stickPointer.current = null;
       clearTimeout(deflectTimer.current);
@@ -227,6 +275,8 @@ export function SpaceFishApp() {
     });
     gameRef.current?.setStick(0, 0);
   };
+  moveStickRef.current = moveStick;
+  releaseStickRef.current = releaseStick;
   let showTouch = touchUi && (!portrait || forced);
   useEffect(syncGuard, [snap.mode, snap.phase, showTouch]);
   // VP.md §4: a changed objective shows in full as a 2.5 s toast, then only the one-liner
@@ -449,8 +499,7 @@ export function SpaceFishApp() {
                   aria-label={PAUSE_COPY.pause}
                   title="Pause (Esc or P)"
                   className="sf-pause"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => gameRef.current?.pauseGame()}
+                  {...tapProps(() => gameRef.current?.pauseGame(), (e) => e.stopPropagation())}
                 >
                   <span aria-hidden="true" className="sf-pause-plate">
                     <span style={{ width: PAUSE.barW, height: PAUSE.barH, background: PAUSE.barColor }} />
@@ -571,14 +620,14 @@ export function SpaceFishApp() {
                     type="button"
                     ref={stayRef}
                     className="rounded-lg bg-primary px-5 py-3 font-display font-bold text-on-primary"
-                    onClick={() => setConfirmMenu(false)}
+                    {...tapProps(() => setConfirmMenu(false))}
                   >
                     {PAUSE_COPY.stay}
                   </button>
                   <button
                     type="button"
                     className="rounded-lg border border-border px-5 py-3 font-display font-bold"
-                    onClick={() => gameRef.current?.quitToTitle()}
+                    {...tapProps(() => gameRef.current?.quitToTitle())}
                   >
                     {PAUSE_COPY.leave}
                   </button>
@@ -587,8 +636,9 @@ export function SpaceFishApp() {
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    data-f02="resume"
                     className="rounded-lg bg-primary px-5 py-3 font-display font-bold text-on-primary"
-                    onClick={() => gameRef.current?.resume()}
+                    {...tapProps(() => gameRef.current?.resume())}
                   >
                     Resume
                   </button>
@@ -597,18 +647,18 @@ export function SpaceFishApp() {
                     data-f02="mute"
                     aria-pressed={muted}
                     className="rounded-lg border border-border px-5 py-3 font-display font-bold"
-                    onClick={() => {
+                    {...tapProps(() => {
                       let m = !muted;
                       setMutedUi(m);
                       gameRef.current?.audio.setMuted(m);
-                    }}
+                    })}
                   >
                     {muted ? PAUSE_COPY.unmute : PAUSE_COPY.mute}
                   </button>
                   <button
                     type="button"
                     className="rounded-lg border border-border px-5 py-3 font-display font-bold"
-                    onClick={() => setConfirmMenu(true)}
+                    {...tapProps(() => setConfirmMenu(true))}
                   >
                     Menu
                   </button>
@@ -710,6 +760,7 @@ export function SpaceFishApp() {
       )}
       {snap.mode === "play" && showTouch && (
         <div
+          ref={touchRef}
           data-hud-root="controls"
           className={`sf-safe sf-controls${fx}`}
           style={{
@@ -720,6 +771,7 @@ export function SpaceFishApp() {
           <div
             ref={stickRef}
             data-hud="stick"
+            data-f02="stick"
             className="sf-stick"
             onPointerDown={(e) => {
               e.preventDefault();
@@ -792,6 +844,7 @@ export function SpaceFishApp() {
             <PadButton
               size="var(--sf-fire)"
               hud="fire"
+              zone="fire"
               className="sf-btn-fire"
               label={(uses["fire"] || 0) < HUD.labelUses ? (snap.weapon === "Shovel" ? "Dig" : "Fire") : ""}
               onUse={() => used("fire")}

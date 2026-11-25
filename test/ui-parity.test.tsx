@@ -143,10 +143,13 @@ const COPY: Array<[string, string]> = [
  * (F-04 removed the header card, so F-02's header padding is gone with it.)
  */
 function withoutF02(s: string, seen: Set<string>) {
-  return s.replace(/<button[^>]*data-f02="(pause|mute)"[^>]*>.*?<\/button>/g, (_m, k) => { seen.add(k); return ""; });
+  return s
+    .replace(/<button[^>]*data-f02="(pause|mute)"[^>]*>.*?<\/button>/g, (_m, k) => { seen.add(k); return ""; })
+    // QA-PR12 / GD 2026-11-18: zone tags on the stick, Fire and Resume (attribute only)
+    .replace(/ data-f02="(stick|fire|resume)"/g, (_m, k) => { seen.add(k); return ""; });
 }
 /** F-02's stubbed entry points (see INTENDED in helpers/sim.ts). */
-const F02_METHODS = ["pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad"];
+const F02_METHODS = ["pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad", "pollReacquire"];
 /**
  * Run our Root with F-02's entry points stubbed (as liveEquivalent does for the sim), so the
  * DOM session follows live's pause path. Earlier PRs' intended changes stay on: their copy
@@ -313,7 +316,7 @@ describe("React shell matches live 1c9c028 (plus intended copy changes)", () => 
         expectSameHud(a[i], b[i]);
       }
       expect([...used].sort((x, y) => x - y)).toEqual(coarse ? USED_PHONE : USED_DESKTOP);
-      expect([...seen].sort()).toEqual(["mute", "pause"]);
+      expect([...seen].sort()).toEqual(coarse ? ["fire", "mute", "pause", "resume", "stick"] : ["mute", "pause", "resume"]);
       expect([...cutOurs]).toEqual(OUR_HUD);
       // the REPAIR bar and the touch controls only exist in some sessions
       expect([...cutLive].sort()).toEqual((coarse ? LIVE_HUD : LIVE_HUD.slice(0, 2)).slice().sort());
