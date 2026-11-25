@@ -10,6 +10,9 @@ import { loopPoints, parseGapless } from "./gapless";
 import { SHOVEL_SFX } from "../content/tuning/sfx";
 import { random } from "../engine/rng";
 
+/** QA-PR12 P3: this many re-checks in a row with no context-clock movement count as a stopped clock */
+const STALL_CHECKS = 8;
+
 // F-07 (Sound SD-01): one AudioContext, decoded AudioBuffers, GainNodes. iOS ignores
 // HTMLMediaElement.volume, so nothing here ever writes `.volume` and nothing uses
 // HTMLAudio or MediaElementSource.
@@ -259,8 +262,9 @@ export class AudioDirector {
    * finished, so 9 of 120 pauses suspended with master still at 0.20. Now the suspend waits
    * until the context clock is past the ramp end plus marginMs. A wall-clock timer sets
    * the first check. If the context clock is still short of that time, the check is set
-   * again for the remaining time. If the clock has stopped (nothing is playing), the
-   * context suspends straight away. resume() cancels any pending suspend.
+   * again (every 5 to 10 ms). The context never suspends before the clock reaches that
+   * time, unless the clock has not moved for STALL_CHECKS checks in a row (it has stopped,
+   * so nothing more would render anyway). resume() cancels any pending suspend.
    */
   suspend(fadeMs = 0, marginMs = 0) {
     this.held = true;
@@ -275,14 +279,20 @@ export class AudioDirector {
       g.linearRampToValueAtTime(0, t + fadeMs / 1000);
       const until = t + (fadeMs + marginMs) / 1000;
       let seen = t;
+      let stalls = 0;
       const check = () => {
         this.holdTimer = null;
         if (!this.held) return;
         const now = this.ac?.currentTime ?? until;
-        if (now + 1e-6 < until && now > seen) {
-          seen = now;
-          this.holdTimer = setTimeout(check, Math.max(5, (until - now) * 1000));
-          return;
+        if (now + 1e-6 < until) {
+          // The clock moves in blocks (~10 ms on desktop, coarser on iOS), so one check
+          // with no movement isn't a stall. Only STALL_CHECKS in a row are.
+          stalls = now > seen ? 0 : stalls + 1;
+          seen = Math.max(seen, now);
+          if (stalls < STALL_CHECKS) {
+            this.holdTimer = setTimeout(check, Math.min(10, Math.max(5, (until - now) * 1000)));
+            return;
+          }
         }
         this.ac?.suspend()?.catch?.(() => {});
       };
