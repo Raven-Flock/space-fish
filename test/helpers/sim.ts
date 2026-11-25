@@ -79,6 +79,9 @@ function liveIntent(lines: string[]) {
 INTENDED.methods.push("pausedFreeze", "pauseGame", "onPause", "onResume", "inputLocked", "autoPause", "pollPad");
 INTENDED.helpers.push("clearHeldInput", "bindPause", "quitToTitle");
 Object.assign(INTENDED.state, { pauseFrom: "play", resumeLockUntil: 0, padStart: false });
+// F-04 phone HUD (VP-PHONE-HUD-v0.1 + v0.1.2): setStickGuard, the Transit ship clamp behind
+// the phone stick, which only the touch HUD calls.
+INTENDED.methods.push("setStickGuard");
 // GD ruling 2026-11-18: held stick/Fire re-acquire after the resume lock (stubbed like the rest of F-02)
 INTENDED.methods.push("pollReacquire");
 Object.assign(INTENDED.state, { reacquirePending: false, onReacquire: null });

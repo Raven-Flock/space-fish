@@ -1,4 +1,5 @@
 import type { Game } from "../game/Game";
+import { bleedOf } from "../engine/view";
 export const cineMethods = {
   loadCine(this: Game) {
     this.cine = {};
@@ -37,11 +38,18 @@ export const cineMethods = {
     let n = this.cut[this.beat];
     let r = this.cine?.[n?.plate];
     let i = r && r.complete && r.naturalWidth;
+    // F-04 (VP v0.1.2 §5): plates stay centred at their 540-tall fit; the extended sky and
+    // stars fill the bleed behind them
+    let b = bleedOf(this.view);
+    let W = 960 + 2 * b;
     if (!i) {
       this.paintSky();
       ctx.fillStyle = "#1a242c";
-      ctx.fillRect(0, 280, 960, 260);
+      ctx.fillRect(0 - b, 280, W, 260);
       return;
+    }
+    if (b > 0) {
+      this.paintSky();
     }
     let a = r.naturalWidth;
     let o = r.naturalHeight;
@@ -58,6 +66,6 @@ export const cineMethods = {
     h.addColorStop(0, "rgba(0,0,0,0)");
     h.addColorStop(1, "rgba(0,0,0,0.62)");
     ctx.fillStyle = h;
-    ctx.fillRect(0, 430, 960, 110);
+    ctx.fillRect(0 - b, 430, W, 110);
   },
 };

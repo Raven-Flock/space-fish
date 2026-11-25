@@ -5,10 +5,11 @@ import { Game } from "../game/Game";
 import { stickOut, phoneTouch, lockLandscape } from "./controls";
 import { musicKnob, Panel, BuildButton, PadButton } from "./widgets";
 import { REPAIR_HINT } from "../content/tuning/build";
+import { HUD, HUD_TIMING } from "../content/tuning/hud";
 import { HUD_HINT, PAUSE_COPY, TITLE_HELP } from "../content/hud";
-import { HUD_TIMING } from "../content/tuning/hud";
 import { AUDIO } from "../content/tuning/audio";
 import { PAUSE } from "../content/tuning/pause";
+import { fireSize, shipGuardX, stage, trayFlips, trayStep } from "./hudLayout";
 import { tapProps } from "./tap";
 import { PointerBook } from "./heldPointers";
 export function SpaceFishApp() {
@@ -16,6 +17,27 @@ export function SpaceFishApp() {
   let gameRef = useRef(null);
   let stickRef = useRef(null);
   let stickPointer = useRef(null);
+  // F-04 floating stick: the thumb's landing point is the stick's origin
+  let stickOrigin = useRef({ x: 0, y: 0 });
+  let deflectTimer = useRef(null);
+  // GD ruling 2026-11-18: held stick and Fire re-acquire after a resume (see heldPointers.ts).
+  // A re-acquired stick takes the finger's current position as its origin (the floating
+  // stick's landing point), so it starts at zero deflection. adopted: re-acquired pointers.
+  // Their moves and lifts arrive on the window, because the new stick and Fire elements
+  // never captured them.
+  let book = useRef(new PointerBook());
+  let firePointer = useRef(null);
+  let adopted = useRef(new Set());
+  let touchRef = useRef(null);
+  let moveStickRef = useRef(null);
+  let releaseStickRef = useRef(null);
+  let phaseRef = useRef("stealth");
+  let toastTimer = useRef(null);
+  let lastObjective = useRef("");
+  let [stickOn, setStickOn] = useState(false);
+  let [walkDone, setWalkDone] = useState(false);
+  let [toast, setToast] = useState("");
+  let [hintLast, setHintLast] = useState("");
   let [snap, setSnap] = useState(() => initialSnap());
   let [ready, setReady] = useState(false);
   let [knob, setKnob] = useState({
@@ -30,25 +52,6 @@ export function SpaceFishApp() {
     h: 0,
   });
   let [music, setMusicUi] = useState(AUDIO.defaults.music);
-  // VP-PHONE-HUD-v0.1 (VP-08): the touch walk hint hides after the first stick move of 0.4 s or longer
-  let [walkHintDone, setWalkHintDone] = useState(false);
-  let walkHintTimer = useRef(null);
-  let stopWalkHintTimer = () => {
-    clearTimeout(walkHintTimer.current);
-    walkHintTimer.current = null;
-  };
-  useEffect(() => () => clearTimeout(walkHintTimer.current), []);
-  // GD ruling 2026-11-18: held stick and Fire re-acquire after a resume (see heldPointers.ts).
-  // stickCentre: a re-acquired stick is centred where the finger is (zero deflection, no lurch).
-  // adopted: re-acquired pointers. Their moves and lifts arrive on the window, because the new
-  // stick and Fire elements never captured them.
-  let book = useRef(new PointerBook());
-  let stickCentre = useRef(null);
-  let firePointer = useRef(null);
-  let adopted = useRef(new Set());
-  let touchRef = useRef(null);
-  let moveStickRef = useRef(null);
-  let releaseStickRef = useRef(null);
   // F-02 pause panel: Mute toggle (persisted by AudioDirector) and the Menu confirm step
   let [muted, setMutedUi] = useState(false);
   let [confirmMenu, setConfirmMenu] = useState(false);
@@ -59,6 +62,15 @@ export function SpaceFishApp() {
       stayRef.current?.focus();
     }
   }, [confirmMenu]);
+  // F-04 right-stack labels hide after the first HUD.labelUses uses of each button (VP v0.1.2)
+  let [uses, setUses] = useState({});
+  let used = (k) => setUses((u) => (u[k] >= HUD.labelUses ? u : { ...u, [k]: (u[k] || 0) + 1 }));
+  // F-04 Pad repair tray (VP v0.1.2 §3): dwell/hysteresis state and the flip under the strip
+  let trayState = useRef({ open: false, nearSince: null });
+  let trayRef = useRef(null);
+  let repairsRef = useRef(-1);
+  let [tray, setTray] = useState({ open: false, top: false });
+  let [dwellTick, setDwellTick] = useState(0);
   useEffect(() => {
     let e = () => {
       let t = window.matchMedia?.("(pointer: coarse)").matches;
@@ -75,8 +87,10 @@ export function SpaceFishApp() {
       });
     };
     let z = () => {
-      stopWalkHintTimer();
       stickPointer.current = null;
+      clearTimeout(deflectTimer.current);
+      deflectTimer.current = null;
+      setStickOn(false);
       setKnob({
         x: 0,
         y: 0,
@@ -115,8 +129,9 @@ export function SpaceFishApp() {
       let { stick, fire } = book.current.pick(fireEl ? fireEl.getBoundingClientRect() : null);
       if (stick && stickPointer.current == null && touchRef.current?.querySelector('[data-f02="stick"]')) {
         stickPointer.current = stick.id;
-        stickCentre.current = { x: stick.x, y: stick.y };
+        stickOrigin.current = { x: stick.x, y: stick.y };
         adopted.current.add(stick.id);
+        setStickOn(true);
         setKnob({ x: 0, y: 0 });
         r.setStick(0, 0, true);
       }
@@ -164,12 +179,14 @@ export function SpaceFishApp() {
   useEffect(() => {
     // F-02: leaving play drops any held stick (the game clears its own held input on pause)
     if (snap.mode !== "play") {
-      stickCentre.current = null;
       firePointer.current = null;
       adopted.current.clear();
     }
     if (snap.mode !== "play" && stickPointer.current != null) {
       stickPointer.current = null;
+      clearTimeout(deflectTimer.current);
+      deflectTimer.current = null;
+      setStickOn(false);
       setKnob({
         x: 0,
         y: 0,
@@ -179,8 +196,23 @@ export function SpaceFishApp() {
       setConfirmMenu(false);
     }
   }, [snap.mode]);
+  // F-04 (VP-01): in Transit the ship's left edge stays >= the stick zone + 24 px.
+  // offsetLeft/offsetWidth are layout px in <main>'s own frame, so this also holds when
+  // <main> is rotated (forced landscape). 0 = no touch stick = the live clamp.
+  let syncGuard = () => {
+    let g = gameRef.current;
+    if (!g) {
+      return;
+    }
+    let el = stickRef.current;
+    let on = snap.mode === "play" && snap.phase === "shooter" && showTouch && el;
+    g.setStickGuard(on ? shipGuardX(el.offsetLeft + el.offsetWidth, g.view) : 0);
+  };
   useEffect(() => {
-    let n = requestAnimationFrame(() => gameRef.current?.resize());
+    let n = requestAnimationFrame(() => {
+      gameRef.current?.resize();
+      syncGuard();
+    });
     return () => cancelAnimationFrame(n);
   }, [forced, vp.w, vp.h]);
   useEffect(() => {
@@ -194,35 +226,39 @@ export function SpaceFishApp() {
   let pausedCut =
     snap.mode === "pause" && gameRef.current?.pauseFrom === "cutscene";
   let inRun = snap.mode === "play" || (snap.mode === "pause" && !pausedCut);
+  phaseRef.current = snap.phase;
+  // VP-08: the walk hint hides after the first stick move of >= 0.4 s (Transit's hint is
+  // timed by the game, PR #10 v0.3)
+  let stickMoved = () => {
+    deflectTimer.current = null;
+    if (phaseRef.current !== "shooter") {
+      setWalkDone(true);
+    }
+  };
   let moveStick = (e) => {
     if (stickPointer.current !== e.pointerId || !stickRef.current) {
       return;
     }
     e.preventDefault();
-    let r = stickRef.current.getBoundingClientRect();
-    let c = stickCentre.current ?? { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-    let a = e.clientX - c.x;
-    let o = e.clientY - c.y;
+    let a = e.clientX - stickOrigin.current.x;
+    let o = e.clientY - stickOrigin.current.y;
     if (forced) {
       let e = a;
       a = o;
       o = -e;
     }
-    let s = stickOut(a, o, Math.min(r.width, r.height) / 2);
+    let s = stickOut(a, o, HUD.stickRing / 2);
     setKnob({
       x: s.vx,
       y: s.vy,
     });
     gameRef.current?.setStick(s.x, s.y, true);
-    if (s.x !== 0 || s.y !== 0) {
-      if (!walkHintTimer.current) {
-        walkHintTimer.current = setTimeout(
-          () => setWalkHintDone(true),
-          HUD_TIMING.walkHintHideAfter * 1000,
-        );
-      }
-    } else {
-      stopWalkHintTimer();
+    let moving = s.x !== 0 || s.y !== 0;
+    if (moving && !deflectTimer.current) {
+      deflectTimer.current = setTimeout(stickMoved, HUD_TIMING.walkHintHideAfter * 1000);
+    } else if (!moving && deflectTimer.current) {
+      clearTimeout(deflectTimer.current);
+      deflectTimer.current = null;
     }
   };
   let releaseStick = (e) => {
@@ -230,8 +266,9 @@ export function SpaceFishApp() {
       return;
     }
     stickPointer.current = null;
-    stickCentre.current = null;
-    stopWalkHintTimer();
+    clearTimeout(deflectTimer.current);
+    deflectTimer.current = null;
+    setStickOn(false);
     setKnob({
       x: 0,
       y: 0,
@@ -241,8 +278,92 @@ export function SpaceFishApp() {
   moveStickRef.current = moveStick;
   releaseStickRef.current = releaseStick;
   let showTouch = touchUi && (!portrait || forced);
-  // VP Transit hint: hidden (faded) once the game says so; re-read on every HUD snap
+  useEffect(syncGuard, [snap.mode, snap.phase, showTouch]);
+  // VP.md §4: a changed objective shows in full as a 2.5 s toast, then only the one-liner
+  useEffect(() => {
+    if (!inRun || !snap.objective || snap.objective === lastObjective.current) {
+      if (!inRun) {
+        lastObjective.current = "";
+      }
+      return;
+    }
+    lastObjective.current = snap.objective;
+    clearTimeout(toastTimer.current);
+    setToast(snap.objective);
+    toastTimer.current = setTimeout(() => setToast(""), HUD.toastMs);
+  }, [snap.objective, inRun]);
+  useEffect(() => () => {
+    clearTimeout(toastTimer.current);
+    clearTimeout(deflectTimer.current);
+  }, []);
+  // F-04 top strip, hint line and build tray state
+  let ground = snap.phase !== "shooter";
+  let bossOn = snap.phase === "shooter" && snap.bossHp > 0;
+  let wrecksLeft = snap.gens < 1 || snap.turrets < 2 || snap.labs < 1;
+  // VP Transit hint: hidden (faded) once the game says so (v0.3); re-read on every HUD snap
   let transitHintDone = !!gameRef.current?.transitHint?.done;
+  let touchHint = !showTouch
+    ? ""
+    : ground
+      ? !walkDone
+        ? HUD_HINT.touchWalk
+        : snap.phase === "base" && wrecksLeft
+          ? REPAIR_HINT
+          : ""
+      : !transitHintDone
+        ? HUD_HINT.touchTransit
+        : "";
+  // one hint line at a time: the objective toast first, then the touch hint
+  let hintText = snap.mode === "play" ? toast || touchHint : "";
+  useEffect(() => {
+    if (hintText) {
+      setHintLast(hintText);
+    }
+  }, [hintText]);
+  useEffect(() => setHintLast(""), [snap.phase]);
+  // VP v0.1.2 §3: the tray opens after a 0.3 s dwell within 150 px of an unrepaired wreck
+  // (or with a kind picked) and closes beyond 200 px or after a repair. It flips to just
+  // under the top strip if the player or the target wreck would sit under it.
+  useEffect(() => {
+    let g = gameRef.current;
+    if (!g?.player || snap.phase !== "base" || !inRun) {
+      trayState.current = { open: false, nearSince: null };
+      repairsRef.current = -1;
+      if (tray.open || tray.top) setTray({ open: false, top: false });
+      return;
+    }
+    let w = g.nearestWreck(g.player.x, g.player.y, Infinity);
+    let dist = w ? Math.hypot(w.x - g.player.x, w.y - g.player.y) : Infinity;
+    let repairs = snap.gens + snap.turrets + snap.labs;
+    let repaired = repairsRef.current >= 0 && repairs > repairsRef.current;
+    repairsRef.current = repairs;
+    let now = performance.now();
+    let next = snap.mode === "play" ? trayStep(trayState.current, now, dist, snap.build != null, repaired) : trayState.current;
+    trayState.current = next;
+    let t = null;
+    if (!next.open && next.nearSince != null) {
+      t = setTimeout(() => setDwellTick((n) => n + 1), Math.max(0, HUD.trayDwellMs - (now - next.nearSince)));
+    }
+    let top = false;
+    if (next.open) {
+      let v = g.view;
+      let sy = (y) => v.oy + (y - g.camY) * v.scale;
+      let ys = [sy(g.player.y)];
+      let target = g.nearestWreck(g.player.x, g.player.y, HUD.trayClosePx);
+      if (target) ys.push(sy(target.y));
+      let h = trayRef.current?.offsetHeight || 0;
+      let vh = trayRef.current?.parentElement?.clientHeight || 0;
+      top = h > 0 && vh > 0 && trayFlips(vh, h, ys);
+    }
+    if (next.open !== tray.open || top !== tray.top) setTray({ open: next.open, top });
+    return () => clearTimeout(t);
+  }, [snap, dwellTick, inRun]);
+  let building = snap.phase === "base" && tray.open;
+  let hpFrac = snap.maxHp > 0 ? snap.hp / snap.maxHp : 0;
+  let fx = forced ? " sf-forced" : "";
+  // narrower than 16:9: the HUD sits inside the letterboxed stage (VP v0.1.2 §5)
+  let lbPx = stage(Math.max(vp.w, vp.h), Math.min(vp.w, vp.h)).letterboxPx;
+  let hudVar = lbPx > 0 ? ({ ["--sf-lb" as any]: `${lbPx}px` } as any) : undefined;
   return (
     <main
       className="relative flex h-dvh flex-col bg-bg text-fg"
@@ -266,166 +387,142 @@ export function SpaceFishApp() {
           ref={canvasRef}
           className="absolute inset-0 h-full w-full touch-none"
         />
-        {snap.mode === "play" && (
-          <button
-            type="button"
-            data-f02="pause"
-            aria-label={PAUSE_COPY.pause}
-            title="Pause (Esc or P)"
-            className="pointer-events-auto absolute"
-            style={{
-              // VP v0.1.2: a transparent 44x44 hit box; the 36x36 plate sits at its top
-              // (inside the 36 px strip), so the box hangs 8 px below. The plate keeps
-              // max(12px, safe-area inset) from the top and right edges.
-              top: forced
-                ? `max(${PAUSE.edgePx}px, env(safe-area-inset-right))`
-                : `max(${PAUSE.edgePx}px, env(safe-area-inset-top))`,
-              right: `calc(${
-                forced
-                  ? `max(${PAUSE.edgePx}px, env(safe-area-inset-bottom))`
-                  : `max(${PAUSE.edgePx}px, env(safe-area-inset-right))`
-              } - ${(PAUSE.hitPx - PAUSE.platePx) / 2}px)`,
-              width: PAUSE.hitPx,
-              height: PAUSE.hitPx,
-              zIndex: 31,
-              display: "flex",
-              alignItems: "flex-start",
-              justifyContent: "center",
-              padding: 0,
-              border: 0,
-              background: "transparent",
-              touchAction: "none",
-            }}
-            {...tapProps(() => gameRef.current?.pauseGame(), (e) => e.stopPropagation())}
-          >
-            <span
-              aria-hidden="true"
-              style={{
-                width: PAUSE.platePx,
-                height: PAUSE.platePx,
-                borderRadius: PAUSE.plateRadius,
-                background: PAUSE.plateColor,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: PAUSE.barGap,
-              }}
-            >
-              <span style={{ width: PAUSE.barW, height: PAUSE.barH, background: PAUSE.barColor }} />
-              <span style={{ width: PAUSE.barW, height: PAUSE.barH, background: PAUSE.barColor }} />
-            </span>
-          </button>
-        )}
         <div className="pointer-events-none absolute inset-0 flex flex-col">
           {inRun && (
-            <header
-              className="flex items-start justify-between gap-3 p-3 sm:p-4"
-              style={{
-                // keeps the header card PAUSE.clearPx clear of the Pause hit box
-                paddingRight: `calc(${forced ? `max(${PAUSE.edgePx}px, env(safe-area-inset-bottom))` : `max(${PAUSE.edgePx}px, env(safe-area-inset-right))`} + ${PAUSE.hitPx - (PAUSE.hitPx - PAUSE.platePx) / 2 + PAUSE.clearPx}px)`,
-              }}
-            >
-              <div className="max-w-xl rounded-lg border border-border bg-surface/90 px-3 py-2 backdrop-blur-sm">
-                <div className="flex items-center gap-3">
-                  <p className="font-display text-sm font-bold tracking-wide text-primary">
-                    {snap.phase === "stealth"
-                      ? "Rim"
-                      : snap.phase === "rescue"
-                        ? "Holdouts"
-                        : snap.phase === "base"
-                          ? "Pad"
-                          : "Transit"}
-                  </p>
-                  <p className="text-xs text-muted">{snap.weapon}</p>
-                  {snap.alert && (
-                    <p className="text-xs font-bold text-danger">Spotted</p>
-                  )}
-                </div>
-                <div className="mt-2 h-2 w-40 overflow-hidden rounded-full bg-border sm:w-56">
-                  {
-                    <div
-                      className="h-full bg-danger"
-                      style={{
-                        width: `${(snap.hp / snap.maxHp) * 100}%`,
-                      }}
-                    />
-                  }
-                </div>
-                <p className="mt-2 text-sm leading-snug">{snap.objective}</p>
-                {showTouch && snap.phase !== "shooter" && !walkHintDone && (
-                  <p className="mt-1 text-xs text-muted">
-                    {HUD_HINT.touchWalk}
-                  </p>
-                )}
-                {showTouch && snap.phase === "shooter" && (
-                  <p
-                    className="mt-1 text-xs text-muted"
+            <div data-hud-root="strip" className={`sf-safe sf-strip${fx}`} style={hudVar}>
+              <div data-hud="hp" data-phase={snap.phase} className="sf-chip sf-hp">
+                <span className="sf-tag">
+                  {snap.phase === "stealth"
+                    ? "Rim"
+                    : snap.phase === "rescue"
+                      ? "Holdouts"
+                      : snap.phase === "base"
+                        ? "Pad"
+                        : "Transit"}
+                </span>
+                <span className="sf-hpbar">
+                  <span
+                    className={`sf-hpfill${hpFrac < HUD.hpLowFrac ? " sf-low" : ""}`}
                     style={{
-                      opacity: transitHintDone ? 0 : 1,
-                      transition: `opacity ${HUD_TIMING.hintFadeMs}ms`,
+                      width: `${hpFrac * 100}%`,
                     }}
-                    aria-hidden={transitHintDone ? true : undefined}
-                  >
-                    {HUD_HINT.touchTransit}
-                  </p>
-                )}
+                  />
+                </span>
+                {snap.alert && <span className="sf-alert">Spotted</span>}
               </div>
+              {snap.objective && !bossOn && (
+                <p
+                  data-hud="objective"
+                  className="sf-chip sf-obj"
+                  title={snap.objective}
+                >
+                  {snap.objective}
+                </p>
+              )}
               {snap.phase === "base" && (
-                <div className="rounded-lg border border-border bg-surface/90 px-3 py-2 text-sm backdrop-blur-sm">
-                  <p>
+                <div data-hud="base" className="sf-chip sf-base">
+                  <span>
                     {"Scrap "}
                     {snap.scrap}
-                  </p>
-                  <p className="text-muted">
-                    {"Power "}
-                    {snap.gens}
-                    {" · Turrets "}
+                  </span>
+                  {/* VP v0.1.2 §5: the letters ship as placeholders until the 14 px glyphs */}
+                  <span className="sf-ico" data-ico="gen" title="Generator">
+                    G
+                  </span>
+                  <span>{snap.gens}</span>
+                  <span className="sf-ico" data-ico="turret" title="Turret">
+                    T
+                  </span>
+                  <span>
                     {snap.turrets}
-                    {"/2 · Lab "}
-                    {snap.labs}
-                  </p>
-                  <p className="text-muted">
-                    {snap.powered ? "Grid live" : "No power"}
-                  </p>
+                    {"/2"}
+                  </span>
+                  <span className="sf-ico" data-ico="lab" title="Lab">
+                    L
+                  </span>
+                  <span>{snap.labs}</span>
                   {snap.nestHp > 0 && (
-                    <p className="text-brass">
+                    <span className="text-brass">
                       {"Nest "}
                       {snap.nestHp}
-                    </p>
+                    </span>
                   )}
                 </div>
               )}
               {snap.phase === "shooter" && (
-                <div className="rounded-lg border border-border bg-surface/90 px-3 py-2 text-sm backdrop-blur-sm">
-                  <p className="text-muted">
-                    {[
-                      snap.speedKit && "Speed",
-                      snap.spread && "Spread",
-                      snap.drone && "Drone",
-                      snap.shield && "Shield",
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "Kits ahead"}
-                  </p>
-                  {snap.phase === "shooter" && snap.bossHp > 0 && (
-                    <div className="mt-2 h-2 w-36 overflow-hidden rounded-full bg-border">
-                      {
-                        <div
-                          className="h-full bg-primary"
-                          style={{
-                            width: `${(snap.bossHp / snap.bossMax) * 100}%`,
-                          }}
-                        />
-                      }
-                    </div>
-                  )}
+                <div data-hud="kits" className="sf-chip sf-kits">
+                  {[
+                    snap.speedKit && "Speed",
+                    snap.spread && "Spread",
+                    snap.drone && "Drone",
+                    snap.shield && "Shield",
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "Kits ahead"}
                 </div>
               )}
-            </header>
+            </div>
+          )}
+          {inRun && bossOn && (
+            <div data-hud-root="boss" data-hud="boss" className={`sf-safe sf-boss${fx}`} style={hudVar}>
+              <span className="sf-boss-label">THE EYE</span>
+              <span className="sf-boss-track">
+                <span
+                  className="sf-boss-chip"
+                  style={{
+                    width: `${(snap.bossHp / snap.bossMax) * 100}%`,
+                  }}
+                />
+                <span
+                  className="sf-boss-fill"
+                  style={{
+                    width: `${(snap.bossHp / snap.bossMax) * 100}%`,
+                  }}
+                />
+              </span>
+            </div>
+          )}
+          {inRun && (
+            // F-02's Pause button lives in this slot (VP v0.1.2 §2): a transparent 44x44 hit
+            // box whose 36x36 plate sits inside the 36 px strip, hanging 8 px below it.
+            <div
+              data-hud-root="pause"
+              data-hud="pause"
+              id="sf-pause-slot"
+              className={`sf-safe sf-pause-slot${fx}`}
+              style={hudVar}
+            >
+              {snap.mode === "play" && (
+                <button
+                  type="button"
+                  data-f02="pause"
+                  aria-label={PAUSE_COPY.pause}
+                  title="Pause (Esc or P)"
+                  className="sf-pause"
+                  {...tapProps(() => gameRef.current?.pauseGame(), (e) => e.stopPropagation())}
+                >
+                  <span aria-hidden="true" className="sf-pause-plate">
+                    <span style={{ width: PAUSE.barW, height: PAUSE.barH, background: PAUSE.barColor }} />
+                    <span style={{ width: PAUSE.barW, height: PAUSE.barH, background: PAUSE.barColor }} />
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
+          {inRun && (
+            <p
+              data-hud-root="hint"
+              data-hud="hint"
+              className={`sf-safe sf-hint${hintText ? " sf-on" : ""}${fx}`}
+              aria-hidden={hintText ? undefined : true}
+              style={hudVar}
+            >
+              {hintText || hintLast}
+            </p>
           )}
           <div className="flex-1" />
           {snap.mode === "cutscene" && (
-            <div className="pointer-events-auto m-3 flex items-end justify-between gap-3 sm:m-4">
+            <div className={`pointer-events-auto m-3 flex items-end justify-between gap-3 sm:m-4 sf-safe sf-cutrow${fx}`}>
               <p className="max-w-xl rounded-lg border border-border bg-surface/95 px-4 py-3 font-display text-lg leading-snug">
                 {snap.caption}
               </p>
@@ -628,7 +725,15 @@ export function SpaceFishApp() {
         </div>
       </div>
       {inRun && snap.phase === "base" && (
-        <div className="flex items-center gap-2 overflow-x-auto border-t border-border bg-surface px-3 py-2">
+        // F-04 (VP-09): an overlay that slides in only while building; it never resizes the canvas
+        <div
+          ref={trayRef}
+          data-hud-root="tray"
+          data-hud={building ? "tray" : undefined}
+          aria-hidden={building ? undefined : true}
+          className={`sf-safe sf-tray${showTouch ? " sf-tray-touch" : ""}${building ? " sf-open" : ""}${building && tray.top ? " sf-tray-top" : ""}${fx}`}
+          style={hudVar}
+        >
           <p className="shrink-0 font-display text-xs font-bold tracking-widest text-brass">
             REPAIR
           </p>
@@ -648,42 +753,35 @@ export function SpaceFishApp() {
           >
             Repair ahead
           </button>
-          <p className="shrink-0 text-xs text-muted">{REPAIR_HINT}</p>
+          {!showTouch && (
+            <p className="shrink-0 text-xs text-muted">{REPAIR_HINT}</p>
+          )}
         </div>
       )}
       {snap.mode === "play" && showTouch && (
         <div
           ref={touchRef}
-          className="pointer-events-none absolute inset-0"
+          data-hud-root="controls"
+          className={`sf-safe sf-controls${fx}`}
           style={{
             zIndex: 30,
+            ...hudVar,
           }}
         >
           <div
             ref={stickRef}
+            data-hud="stick"
             data-f02="stick"
-            className="pointer-events-auto absolute"
-            style={{
-              left: forced
-                ? "max(12px, env(safe-area-inset-top))"
-                : "max(12px, env(safe-area-inset-left))",
-              bottom:
-                snap.phase === "base"
-                  ? "76px"
-                  : forced
-                    ? "max(12px, env(safe-area-inset-left))"
-                    : "max(12px, env(safe-area-inset-bottom))",
-              width: 148,
-              height: 148,
-              borderRadius: 999,
-              border: "2px solid rgba(232,239,233,0.4)",
-              background: "rgba(12,18,24,0.55)",
-              touchAction: "none",
-            }}
+            className="sf-stick"
             onPointerDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
               stickPointer.current = e.pointerId;
+              stickOrigin.current = {
+                x: e.clientX,
+                y: e.clientY,
+              };
+              setStickOn(true);
               moveStick(e);
               try {
                 e.currentTarget.setPointerCapture(e.pointerId);
@@ -693,50 +791,68 @@ export function SpaceFishApp() {
             onPointerUp={releaseStick}
             onPointerCancel={releaseStick}
           >
-            {
-              <span
-                className="pointer-events-none absolute top-1/2 left-1/2 rounded-full bg-primary"
-                style={{
-                  width: 56,
-                  height: 56,
-                  transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
-                }}
-              />
-            }
+            <span className={`sf-stick-ring${stickOn ? " sf-active" : ""}`} />
+            <span
+              className="sf-stick-knob"
+              style={{
+                transform: `translate(calc(-50% + ${knob.x}px), calc(-50% + ${knob.y}px))`,
+              }}
+            />
           </div>
+          {/* VP v0.1.2 §5 right stack: Fire in the corner, Use 56 up-left (ground phases),
+              the Rim's Sneak/Noise above Fire; 12 px labels under each, gone after 3 uses */}
           <div
-            className="pointer-events-auto absolute grid grid-cols-2 gap-2"
-            style={{
-              right: forced
-                ? "max(12px, env(safe-area-inset-bottom))"
-                : "max(12px, env(safe-area-inset-right))",
-              bottom:
-                snap.phase === "base"
-                  ? "76px"
-                  : forced
-                    ? "max(12px, env(safe-area-inset-right))"
-                    : "max(12px, env(safe-area-inset-bottom))",
-              width: 176,
-            }}
+            className="sf-buttons"
+            style={{ ["--sf-fire" as any]: `${fireSize(vp.w > vp.h ? vp.w : vp.h, vp.w > vp.h ? vp.h : vp.w)}px` }}
           >
             {snap.phase === "stealth" && (
-              <PadButton onPress={() => gameRef.current?.toggleSneak()}>
+              <PadButton
+                size={HUD.minTarget}
+                hud="sneak"
+                className="sf-btn-sneak"
+                label={(uses["sneak"] || 0) < HUD.labelUses ? "Sneak" : ""}
+                onUse={() => used("sneak")}
+                onPress={() => gameRef.current?.toggleSneak()}
+              >
                 Sneak
               </PadButton>
             )}
             {snap.phase === "stealth" && (
-              <PadButton onPress={() => gameRef.current?.pulseNoise()}>
+              <PadButton
+                size={HUD.minTarget}
+                hud="noise"
+                className="sf-btn-noise"
+                label={(uses["noise"] || 0) < HUD.labelUses ? "Noise" : ""}
+                onUse={() => used("noise")}
+                onPress={() => gameRef.current?.pulseNoise()}
+              >
                 Noise
               </PadButton>
             )}
-            <PadButton hold zone="fire" onHold={(e) => gameRef.current?.setFire(e)}>
-              {snap.weapon === "Shovel" ? "Dig" : "Fire"}
-            </PadButton>
-            {snap.phase !== "shooter" && (
-              <PadButton onPress={() => gameRef.current?.pulseUse()}>
+            {ground && (
+              <PadButton
+                size={HUD.use}
+                hud="use"
+                className="sf-btn-use"
+                label={(uses["use"] || 0) < HUD.labelUses ? "Use" : ""}
+                onUse={() => used("use")}
+                onPress={() => gameRef.current?.pulseUse()}
+              >
                 Use
               </PadButton>
             )}
+            <PadButton
+              size="var(--sf-fire)"
+              hud="fire"
+              zone="fire"
+              className="sf-btn-fire"
+              label={(uses["fire"] || 0) < HUD.labelUses ? (snap.weapon === "Shovel" ? "Dig" : "Fire") : ""}
+              onUse={() => used("fire")}
+              hold
+              onHold={(e) => gameRef.current?.setFire(e)}
+            >
+              {snap.weapon === "Shovel" ? "Dig" : "Fire"}
+            </PadButton>
           </div>
         </div>
       )}

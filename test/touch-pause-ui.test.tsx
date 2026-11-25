@@ -103,27 +103,24 @@ describe("Pause button", () => {
         expect(p, `${label} ${phase}`).not.toBe(null);
         // hit box: transparent 44x44; the plate sits at its top, so the box hangs 8 px below
         expect([PAUSE.hitPx, PAUSE.platePx, PAUSE.plateRadius, PAUSE.hangPx]).toEqual([44, 36, 10, 8]);
-        expect(p!.style.width).toBe("44px");
-        expect(p!.style.height).toBe("44px");
-        expect(["transparent", "none"]).toContain(p!.style.background);
-        expect(p!.style.alignItems).toBe("flex-start");
+        // F-04 places it: the button fills the 44x44 slot (#sf-pause-slot, styled in
+        // styles.css: .sf-pause-slot / .sf-pause / .sf-pause-plate, see phone-hud-ui)
+        const slot = p!.parentElement!;
+        expect(slot.id).toBe("sf-pause-slot");
+        expect(p!.className).toBe("sf-pause");
+        const forced = w < h && coarse;
+        // max(12px, inset) on the device's own edges, also when <main> is rotated
+        expect(slot.className.split(" ")).toEqual(forced ? ["sf-safe", "sf-pause-slot", "sf-forced"] : ["sf-safe", "sf-pause-slot"]);
         const plate = p!.firstElementChild as HTMLElement;
-        expect([plate.style.width, plate.style.height, plate.style.borderRadius]).toEqual(["36px", "36px", "10px"]);
-        expect(plate.style.background).toBe("rgba(12, 18, 24, 0.72)");
+        expect(plate.className).toBe("sf-pause-plate");
         const bars = [...plate.children] as HTMLElement[];
         expect(bars.length).toBe(2);
         for (const bar of bars) {
           expect([bar.style.width, bar.style.height]).toEqual(["4px", "16px"]);
           expect(bar.style.background).toBe("rgb(232, 239, 233)");
         }
-        const html = p!.outerHTML;
-        const forced = w < h && coarse;
-        // max(12px, inset), not inset + 12; the hit box reaches 4 px past the plate's edge
-        expect(html).toContain(forced ? "top: max(12px, env(safe-area-inset-right))" : "top: max(12px, env(safe-area-inset-top))");
-        expect(html).toContain(forced ? "right: calc(max(12px, env(safe-area-inset-bottom)) - 4px)" : "right: calc(max(12px, env(safe-area-inset-right)) - 4px)");
-        // the header card stays 8 px clear of the hit box: edge + 40 (hit box) + 8
-        const header = t.host.querySelector("header")!;
-        expect(header.getAttribute("style")).toContain(`+ ${40 + PAUSE.clearPx}px`);
+        // one Pause control only (F-04 reserved the slot; F-02 fills it, no duplicate)
+        expect(t.host.querySelectorAll('button[aria-label="Pause"]').length).toBe(1);
         t.click(p);
         t.b.frames(2);
         expect(t.game().mode).toBe("pause");

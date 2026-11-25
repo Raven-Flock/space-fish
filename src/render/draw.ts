@@ -1,5 +1,6 @@
 import type { Game } from "../game/Game";
 import { random } from "../engine/rng";
+import { bleedOf } from "../engine/view";
 export const drawMethods = {
   draw(this: Game) {
     let ctx = this.ctx;
@@ -14,7 +15,9 @@ export const drawMethods = {
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, ox * dpr, oy * dpr);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, 960, 540);
+    // F-04: clip to the whole extend-width stage (the 960 column plus the bleed), no pillarbox
+    let b = bleedOf(this.view);
+    ctx.rect(0 - b, 0, 960 + 2 * b, 540);
     ctx.clip();
     if (!this.reduce && this.shake > 0 && !this.pausedFreeze()) {
       ctx.translate(

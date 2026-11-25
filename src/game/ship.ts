@@ -1,16 +1,27 @@
 import type { Game } from "./Game";
 import { clamp, hyp } from "../engine/math";
 import { SHIP } from "../content/tuning/player";
+import { HUD } from "../content/tuning/hud";
+
+// F-04: the phone stick's guard line (ship-centre x relative to the scroll) that the
+// React shell sets in Transit; 0 = no touch stick (desktop, parity sims) = live clamp.
+declare module "./Game" {
+  interface Game {
+    stickGuardX?: number;
+  }
+}
 
 // The player's ship in Transit: movement inside the scrolling window, guns, drone.
 export const shipMethods = {
   moveShip(this: Game, dt, wish, speed) {
     const x0 = this.player.x;
     const y0 = this.player.y;
+    // F-04 (VP-01): with the touch stick up, the ship's left edge stays >= stick zone + 24 px
+    const minX = Math.min(HUD.shipMaxX, Math.max(HUD.shipMinX, this.stickGuardX || 0));
     this.player.x = clamp(
       this.player.x + wish.x * speed * wish.mag * dt,
-      this.scroll + 36,
-      this.scroll + 400,
+      this.scroll + minX,
+      this.scroll + HUD.shipMaxX,
     );
     this.player.y = clamp(
       this.player.y + wish.y * speed * wish.mag * dt,
@@ -24,6 +35,13 @@ export const shipMethods = {
       this.lastYaw = Math.atan2(-wish.x, -wish.y);
     }
     this.dir = 2;
+  },
+  /** F-04: set by the React shell from the stick zone (hudLayout.shipGuardX); 0 clears it. */
+  setStickGuard(this: Game, x) {
+    this.stickGuardX = x > 0 ? x : 0;
+    if (this.mode === "play" && this.phase === "shooter" && this.stickGuardX > 0) {
+      this.player.x = Math.max(this.player.x, this.scroll + Math.min(HUD.shipMaxX, this.stickGuardX));
+    }
   },
   fireShipGuns(this: Game, dt) {
     const held = this.held();
